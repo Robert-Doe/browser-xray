@@ -1,0 +1,207 @@
+<title>Module 19: html_tokenizer — Every Weird Case Is Specified</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#d6497a;--accent-dim:#471c2e;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 2 · PHASE 6 · MODULE 19 · FIRST RENDERING-ENGINE MODULE</span>
+  <h1>html_tokenizer</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: HTML tokenization is a defined, deterministic state
+    machine with precise recovery rules for malformed input — not
+    "reading tags," and not something a regular expression could
+    faithfully reproduce.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../../phase5_networking/16_http_parsing/tutorial.html">Module 16: http_parsing</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A postal sorting machine reads addresses letter by letter, always
+    knowing exactly what "mode" it's in: reading a street number,
+    reading a street name, reading a ZIP code. It never "looks ahead"
+    or guesses the whole address at once — it transitions between a
+    small set of known modes, one character at a time, and every mode
+    has an exact, predefined rule for what happens next, INCLUDING what
+    happens when the writing is smudged, misspelled, or doesn't quite
+    match the expected format. Nothing about a smudge crashes the
+    machine — there's a defined "best effort" behavior for every
+    smudge type the machine's designers anticipated. HTML tokenization
+    is exactly this kind of machine, and the "smudges" — malformed
+    markup — have exact, specified outcomes, not undefined behavior.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>The tokenizer starts in the <code>DATA</code> state, reading
+    plain text one character at a time.</li>
+    <li>Hitting <code>&lt;</code> transitions to <code>TAG_OPEN</code>
+    — but only a letter after it commits to actually being a tag; a
+    space, digit, or anything else means "false alarm," and the
+    <code>&lt;</code> goes right back into the text as a literal
+    character.</li>
+    <li>A real tag walks through <code>TAG_NAME</code>,
+    <code>BEFORE_ATTRIBUTE_NAME</code>, <code>ATTRIBUTE_NAME</code>,
+    and value states, character by character, each state knowing
+    exactly what ends it and what state comes next.</li>
+    <li>Malformed sequences (<code>&lt;?xml...?&gt;</code>, an invalid
+    end-tag name) are routed to <code>BOGUS_COMMENT</code> — a real,
+    specified fallback, not a crash.</li>
+    <li>At every point, whatever plain text has accumulated is only
+    added to the token stream once something else is about to be
+    emitted — never before, never out of order.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>--- stray '<' that is not a tag (real text, not an error) ---
+input: '1 < 2 and 3 > 1'
+    Character(data='1 < 2 and 3 > 1')
+
+--- '<?xml ...?>' becomes a BOGUS COMMENT, not special XML syntax ---
+input: '<?xml version="1.0"?><p>after</p>'
+    Comment(data='?xml version="1.0"?')
+    StartTag(name='p', attributes={}, self_closing=False)
+    Character(data='after')
+    EndTag(name='p')
+
+--- invalid end tag name -- ordering across a bogus comment ---
+input: 'a</1>b'
+    Character(data='a')
+    Comment(data='1')
+    Character(data='b')</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output from our own tokenizer, matching real HTML5
+    spec-defined recovery behavior for each malformed case.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>def _emit(self, token) -> None:
+    self._flush_char_buffer()
+    self.tokens.append(token)</code></pre>
+  <p>
+    This one small method is the fix for a real bug we hit while
+    building this module: an earlier version scattered manual
+    "flush the pending text" calls across several state transitions,
+    and missed one — producing a token stream where text appeared
+    <em>after</em> a comment it should have preceded. Routing every
+    non-character token through this single method makes that class of
+    bug structurally impossible: there is no longer a second place to
+    remember to flush.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Build a tree from these tokens — a tokenizer only produces
+        a flat stream (Module 20 builds the DOM tree)</li>
+        <li>Use DOCTYPE for anything — it's recognized and discarded
+        here; real browsers use it to pick quirks vs. standards mode</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Explain, precisely, why "just use a regex" for HTML is a
+        real, well-known anti-pattern</li>
+        <li>Predict how a real browser will tokenize several classes of
+        malformed markup, correctly, from first principles</li>
+        <li>Read and reason about a state-machine-based parser's source
+        code structure</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track2-applied-layer/phase6_parsing_dom/19_html_tokenizer
+python run_tokenizer_demo.py</code></pre>
+
+  <div class="callout">
+    If you modify a state handler and see tokens appear out of order:
+    check whether you added a new place that appends directly to
+    <code>self.tokens</code> instead of going through <code>self._emit()</code>
+    — that's the exact bug class this module's own <code>DECISIONS.md</code>
+    documents catching during development.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      Two different browsers, both fully spec-compliant, are given the
+      exact same malformed HTML. Should you expect them to ever tokenize
+      it differently? Think about what "spec-compliant" actually
+      guarantees, before revealing the answer.
+    </summary>
+    <div class="answer">
+      No — and this is precisely why the HTML5 tokenization algorithm
+      was written as an exhaustive, exact state machine (unlike earlier,
+      looser "HTML" specifications that left error recovery
+      implementation-defined). Before HTML5, different browsers
+      genuinely DID recover from malformed markup differently, which
+      was a real, practical, and sometimes security-relevant problem —
+      a page could look different, or a security filter could parse
+      content differently than the browser ultimately rendering it,
+      exactly the same class of ambiguity as HTTP request smuggling
+      (Module 16). HTML5's fully-specified tokenizer algorithm — the
+      one this module implements a real subset of — exists specifically
+      to guarantee that two compliant implementations handle every
+      malformed case identically, closing off an entire class of
+      cross-browser inconsistency and parsing-differential
+      vulnerability.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why does `<?xml version="1.0"?>` become a comment instead of
+    being recognized as an XML declaration?</dt>
+    <dd>Because HTML is not XML, and the HTML5 tokenizer has no special
+    handling for XML processing-instruction syntax at all — anything
+    starting `<?` that isn't a recognized HTML construct falls into the
+    generic "bogus comment" recovery path, by design. This is a common,
+    genuine point of confusion for anyone coming from an XML/XHTML
+    background.</dd>
+
+    <dt>Why does an unclosed tag at EOF not raise an error?</dt>
+    <dd>Because real-world HTML on the actual web is full of small
+    errors, truncated responses, and imperfect markup — and browsers
+    are specified to degrade gracefully rather than refuse to render a
+    page over a missing closing tag. "Be liberal in what you accept" is
+    a deliberate, spec-level design philosophy for HTML specifically.</dd>
+
+    <dt>Is a hand-rolled tokenizer like this ever used in production
+    software, or is it purely educational?</dt>
+    <dd>Real production HTML parsers (browser engines, and standalone
+    libraries like Python's own `html.parser`) are built on exactly this
+    state-machine shape — this module's tokenizer is a genuine, scoped
+    implementation of the same approach, not a toy simplification of a
+    fundamentally different real technique.</dd>
+
+    <dt>What's the difference between a "parse error" in this spec and
+    an error in most programming languages?</dt>
+    <dd>In most languages, an error typically stops execution or throws
+    an exception. In the HTML5 tokenization spec, a "parse error" is
+    just a label for "this is malformed input" — it's paired with an
+    exact, specified recovery action, and processing always continues.
+    The term describes non-conformance in the input, not a failure in
+    the tokenizer.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You have a flat stream of tokens. Module 20 turns that stream into
+    an actual tree — the DOM — applying insertion-mode rules that
+    decide, among other things, where an unclosed tag's implicit
+    closing actually happens.
+  </p>
+
+  <div class="module-footer">
+    <a href="../../phase5_networking/18_cors_preflight/tutorial.html">← Module 18: cors_preflight</a>
+    <a href="../20_dom_tree_builder/tutorial.html">Module 20: dom_tree_builder →</a>
+  </div>
+</div>
