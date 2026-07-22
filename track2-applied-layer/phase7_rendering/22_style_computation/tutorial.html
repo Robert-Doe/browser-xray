@@ -1,0 +1,205 @@
+<title>Module 22: style_computation — Where the Two Trees Finally Meet</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#d6a53c;--accent-dim:#473714;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 2 · PHASE 7 · MODULE 22 · FIRST RENDERING-PIPELINE MODULE</span>
+  <h1>style_computation</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: every DOM node gets one fully resolved computed style via
+    a real, exactly-ordered cascade — !important beats specificity,
+    specificity beats source order — before any layout or pixel exists.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../../phase6_parsing_dom/20_dom_tree_builder/tutorial.html">Module 20: dom_tree_builder</a>
+    <a class="tag-link" href="../../phase6_parsing_dom/21_css_parser_cssom/tutorial.html">Module 21: css_parser_cssom</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A courtroom hears every applicable rule that could govern a case —
+    general statutes, specific regulations, and any explicit
+    overriding order a judge has issued — and resolves them in a strict
+    priority order: an explicit override order wins no matter what,
+    THEN the more specific regulation beats the general statute, and
+    only if two rules are equally specific does whichever was enacted
+    more recently win. No rule is thrown away just because a more
+    specific one exists — they all get heard — but exactly one verdict
+    comes out per question asked. Computing an element's style is
+    exactly this: every matching CSS rule is heard, and the cascade is
+    the strict, ordered process for reaching one final verdict per
+    property.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>For a given DOM element, every rule in the CSSOM is checked:
+    does any of its selectors match this element (including checking
+    ancestors, for selectors like <code>div p</code>)?</li>
+    <li>Every declaration from every matching rule is collected,
+    tagged with whether it's <code>!important</code>, its selector's
+    specificity, and its position in the original stylesheet.</li>
+    <li>These candidates are sorted by that exact three-part priority:
+    important-ness first, specificity second, source order third.</li>
+    <li>For each property, the highest-priority candidate — the LAST
+    one in that sorted order — is the final, computed value.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>CSS:
+.title { color: red; }
+#header { color: blue; }
+p { color: green !important; }
+div p { font-weight: bold; }
+.title { background: yellow; }
+
+<div id=header class=title> computed style: {'color': 'blue', 'background': 'yellow'}
+  -> color: blue, because #header (1 ID) outranks .title (1 class),
+     regardless of which rule appeared first in the stylesheet
+
+<p> (parent=div) computed style: {'font-weight': 'bold', 'color': 'green'}
+<p> (parent=#document) computed style: {'color': 'green'}
+  -> BOTH <p> elements get color: green, because !important overrides
+     specificity entirely
+  -> only the <p> INSIDE the div gets font-weight: bold, because
+     'div p' genuinely does not match the top-level <p></pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output. Three independent, correct cascade
+    decisions from one small, deliberately tricky stylesheet.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>candidates.sort(key=lambda c: (c[0], c[1], c[2]))
+style = {}
+for important, spec, order, decl in candidates:
+    style[decl.property] = decl.value</code></pre>
+  <p>
+    This is the entire cascade, in two lines. Sorting ascending by the
+    real priority order, then simply overwriting each property as we
+    go, means the LAST write for any property is automatically the
+    correct winner — no separate "which one wins" comparison function
+    to maintain or get subtly wrong.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Match child (<code>&gt;</code>), sibling (<code>+</code>,
+        <code>~</code>), attribute, or pseudo-class selectors — only
+        type/class/ID/universal plus descendant combinators</li>
+        <li>Apply property INHERITANCE (e.g. <code>color</code>
+        cascading down to children that set no color themselves) — a
+        real, separate CSS mechanism, deliberately out of this
+        module's scope</li>
+        <li>Turn any of this into actual pixels — that's Module 23</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Predict, correctly, which of several conflicting CSS rules
+        wins for a given element and property</li>
+        <li>Explain precisely why <code>!important</code> beats even an
+        ID selector, and why that's not a contradiction of "specificity
+        matters"</li>
+        <li>Implement real CSS specificity comparison from first
+        principles</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track2-applied-layer/phase7_rendering/22_style_computation
+python run_style_demo.py</code></pre>
+
+  <div class="callout">
+    If a descendant selector like <code>div p</code> doesn't match
+    when you expect it to: check that the element actually has a
+    <code>parent</code> reference set — this module's local
+    <code>tree_constructor.py</code> sets it during insertion, but any
+    tree built by a DIFFERENT constructor (like Module 20's original,
+    unmodified version) won't have it, and ancestor-matching will
+    silently fail to find anything.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      Two rules have IDENTICAL specificity and neither uses
+      `!important`: `.a.b { color: red; }` and `.c.d { color: blue; }`,
+      both matching the same element, `.a.b` written FIRST in the
+      stylesheet. Which color wins, and why does this matter for how
+      you should think about writing CSS in a large, multi-file
+      project? Think it through before revealing the answer.
+    </summary>
+    <div class="answer">
+      Blue wins — `.c.d`, appearing LATER in source order, wins the
+      tiebreak since both selectors have identical specificity (two
+      classes each) and neither has `!important`. This matters
+      enormously in practice: in a large project, the actual FILE
+      ORDER your stylesheets (or `<style>` blocks, or CSS-in-JS
+      injection order) load in becomes a real, load-bearing part of
+      which styles win, for any two rules that happen to tie on
+      specificity. This is exactly why large-scale CSS methodologies
+      (like BEM, or utility-first frameworks) often try hard to avoid
+      relying on source-order tiebreaks at all — a rule's outcome
+      depending on file load order, rather than something visible in
+      the rule itself, is a well-known, real source of "why did my CSS
+      change when I only added a new file" bugs.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why does specificity count IDs, classes, and types separately
+    instead of just adding up a single number?</dt>
+    <dd>Because a single number could let enough type/class selectors
+    accidentally "add up" to outrank an ID selector, which the real
+    spec never allows — one ID always outranks any number of classes,
+    and one class always outranks any number of type selectors. Keeping
+    them as separate tuple positions (compared lexicographically, ID
+    position first) is what enforces that strict tier ordering exactly.</dd>
+
+    <dt>Is `!important` considered part of "specificity"?</dt>
+    <dd>No — and this module deliberately keeps them as two separate
+    sort keys for exactly that reason. `!important` is its own,
+    higher-priority tier that overrides specificity entirely, not a
+    boost added to a selector's specificity score.</dd>
+
+    <dt>What happens if NO rule matches an element at all?</dt>
+    <dd>Its computed style is simply an empty dict in this module's
+    model — no declarations to resolve. Real browsers additionally fill
+    in browser-default ("user agent stylesheet") values and handle
+    inheritance in this case; both are real mechanisms this module
+    deliberately doesn't build, per its stated scope.</dd>
+
+    <dt>Why compute a `winning_reason` dict in `compute_element_style`
+    if the demo doesn't print it?</dt>
+    <dd>It's there specifically to make the cascade's REASONING
+    inspectable, not just its outcome — genuinely useful for debugging
+    or extending this module, even though this particular demo only
+    prints the final resolved style. Real browser DevTools "Computed"
+    panels show exactly this kind of reasoning (which rule, which
+    specificity) for every property, for exactly this reason.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    Every element now has a resolved style — but "color: blue" and
+    "font-weight: bold" aren't pixels yet; they're not even positions.
+    Module 23 turns computed styles into real geometry: a layout
+    algorithm that gives every element an actual x, y, width, and
+    height.
+  </p>
+
+  <div class="module-footer">
+    <a href="../../phase6_parsing_dom/21_css_parser_cssom/tutorial.html">← Module 21: css_parser_cssom</a>
+    <a href="../23_layout_box_model/tutorial.html">Module 23: layout_box_model →</a>
+  </div>
+</div>
