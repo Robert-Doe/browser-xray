@@ -1,0 +1,235 @@
+<title>Module 3: syscall_boundary — One Door, Two Vocabularies</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#7c83db;--accent-dim:#2a2c52;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 1 · PHASE 1 · MODULE 03</span>
+  <h1>syscall_boundary</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: every "browser action" that touches the outside world
+    (open a file, open a socket) is a request crossing one shared
+    kernel boundary — by bypassing the friendly Win32 API entirely and
+    reaching the same file, and the same refusal, directly.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../../../prerequisites/03_syscalls.html#syscall-boundary">the syscall boundary as a chokepoint</a>
+    <a class="tag-link" href="../../../prerequisites/03_syscalls.html#syscall-table">Win32 API vs. ntdll vs. the kernel</a>
+    <a class="tag-link" href="../../../prerequisites/02_privilege_rings.html#trap">the trap into Ring 0</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A government office has a fancy public-facing service counter with
+    friendly forms in plain language ("Request a copy of your birth
+    certificate"). Behind that counter, every single form gets
+    translated into one internal case-file format and handed through
+    one interior door to the actual records clerk — the only person
+    with the keys to the archive. You could, in principle, walk around
+    the public counter and knock directly on the interior door,
+    speaking the clerk's internal case-file jargon yourself. You'd get
+    the identical record, because there was only ever one archive and
+    one clerk. The public counter was never a separate authority — it
+    was a translation layer in front of the one door that actually
+    matters.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>Python's <code>open()</code> writes a file — internally, this
+    calls kernel32's <code>CreateFileW</code> (the "public counter").</li>
+    <li><code>nt_native_layer.py</code> then reads that same file back,
+    but skips kernel32 entirely: it calls <code>ntdll!NtCreateFile</code>
+    and <code>ntdll!NtReadFile</code> directly (the "interior door").</li>
+    <li>Both paths return the identical bytes — because both paths were
+    always terminating at the same kernel file object underneath.</li>
+    <li><code>same_kernel_decision.py</code> then asks both layers to
+    open a file that doesn't exist.</li>
+    <li>The Win32 layer reports failure as <code>GetLastError() == 2</code>
+    (<code>ERROR_FILE_NOT_FOUND</code>). The NT layer reports the exact
+    same refusal as <code>NTSTATUS == 0xC0000034</code>
+    (<code>STATUS_OBJECT_NAME_NOT_FOUND</code>).</li>
+    <li>These two codes aren't a coincidence — Windows' own
+    <code>RtlNtStatusToDosError()</code> function is what translates the
+    NT status into the Win32 error code internally. The Win32 number is
+    <em>derived from</em> the NT number, proving there's one decision,
+    made once, reported in two vocabularies.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>Wrote 67 bytes via Python's normal open() (which itself goes through kernel32's CreateFileW).
+
+Now reading the SAME file back, but skipping kernel32 entirely -- calling ntdll.dll's NtCreateFile / NtReadFile directly:
+  NtCreateFile  -> NTSTATUS 0x00000000 (STATUS_SUCCESS)
+  NtReadFile    -> NTSTATUS 0x00000000
+
+  bytes read via raw NtCreateFile/NtReadFile: b'Written by ordinary Python open() -- kernel32 -> ntdll -> syscall.\n'
+  identical to what we originally wrote?      True
+
+--- separately: attempting to open a MISSING file ---
+Win32 layer  (kernel32!CreateFileW):
+    succeeded?  False
+    GetLastError() = 2 (ERROR_FILE_NOT_FOUND)
+
+NT native layer (ntdll!NtCreateFile):
+    succeeded?  False
+    NTSTATUS = 0xC0000034 (STATUS_OBJECT_NAME_NOT_FOUND)</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output from both scripts. Same file, same bytes,
+    two API layers. Same refusal, two numeric vocabularies.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>status = ntdll.NtCreateFile(
+    ctypes.byref(handle),
+    GENERIC_READ | SYNCHRONIZE,
+    ctypes.byref(attrs),
+    ctypes.byref(open_iosb),
+    None, 0,
+    FILE_SHARE_READ | FILE_SHARE_WRITE,
+    FILE_OPEN,
+    FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE,
+    None, 0,
+)</code></pre>
+  <p>
+    This is a real call into <code>ntdll.dll</code> — the exact same
+    DLL that kernel32's <code>CreateFileW</code> itself calls into
+    internally. Nothing here is faked or wrapped in a compatibility
+    shim; the structs (<code>ntdll_structs.py</code>) are hand-declared
+    to match the NT native API's real, if semi-private, binary contract
+    (see <a href="DECISIONS.md">DECISIONS.md</a>). When this call
+    succeeds, you are one function call away from the kernel — closer
+    to the syscall boundary than any Win32 application code normally
+    gets.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Watch the actual <code>syscall</code> CPU instruction fire,
+        or see a live trace of every syscall a process makes (that
+        needs a kernel tracing facility like ETW/Process Monitor, which
+        typically needs administrator rights — noted, not built, here)</li>
+        <li>Explain how a sandbox can <em>block</em> a specific syscall
+        outright (Module 10)</li>
+        <li>Say anything about syscalls made by a process other than
+        this one</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Prove, with matching bytes, that the "friendly" API and the
+        "native" API reach the identical kernel object</li>
+        <li>Prove, with matching refusal codes in two vocabularies, that
+        there's exactly one place the kernel's decision gets made</li>
+        <li>Read an NTSTATUS or a Win32 error code and know they can
+        represent literally the same underlying event</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track1-core-engine/phase1_bare_metal/03_syscall_boundary
+python nt_native_layer.py
+python same_kernel_decision.py</code></pre>
+
+  <div class="callout">
+    While building this exact module, an early version of
+    <code>same_kernel_decision.py</code> printed
+    <code>succeeded? True</code> for the "open a missing file" test on
+    <em>both</em> layers — which looked like the whole experiment was
+    broken. The real cause: Win32's <code>OPEN_EXISTING</code> (value
+    3) and the NT native <code>FILE_OPEN</code> (value 1) are
+    <em>different numbers for a similarly-named idea</em>, and the
+    first draft accidentally passed the NT constant into the Win32
+    call — which Win32 reads as <code>CREATE_NEW</code>, so it quietly
+    created the "missing" file instead of failing to find it. If you
+    ever see a stray file appear when running this script, that's this
+    exact class of bug, not a broken environment. Full account in
+    <code>DECISIONS.md</code>.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      If a security product hooks (intercepts) kernel32's
+      <code>CreateFileW</code> to monitor file access, would this
+      module's <code>nt_native_layer.py</code> approach be visible to
+      that hook? Reason about where the hook sits before revealing the
+      answer.
+    </summary>
+    <div class="answer">
+      No — and this is precisely why it matters that there's a layer
+      <em>below</em> the Win32 API. A hook placed on kernel32's
+      <code>CreateFileW</code> only sees calls that actually go through
+      that specific function. Code that calls <code>ntdll!NtCreateFile</code>
+      directly, as this module does, never touches kernel32's
+      <code>CreateFileW</code> at all — the hook is simply never
+      reached. This is exactly why real security tooling that wants
+      complete visibility places its hooks at the ntdll layer (or
+      lower, at the kernel itself via a driver/ETW), not at the Win32
+      layer — the Win32 layer is demonstrably not the true chokepoint,
+      even though it's the one most application code happens to use.
+      The real, unavoidable chokepoint is the syscall instruction
+      itself, which is why kernel-level or ETW-based monitoring is
+      considered more complete than userland API hooking.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Is calling <code>ntdll</code> functions directly "hacking" the OS?</dt>
+    <dd>No — it's an unusual but legitimate way to call functions that
+    are exported and callable like any other DLL function; Windows
+    doesn't prevent it. It's "semi-private" in the sense that Microsoft
+    doesn't provide official documentation or support guarantees for
+    these specific functions changing between Windows versions — not in
+    the sense that calling them is prohibited or exploits a flaw.</dd>
+
+    <dt>Why does the Win32 layer even exist if it's "just" a wrapper?</dt>
+    <dd>Convenience, stability, and compatibility — kernel32 provides a
+    documented, supported, relatively stable API surface that
+    application developers can rely on across Windows versions, while
+    the NT native layer underneath has changed internal details over
+    the years. The wrapper is genuinely useful; this module's point is
+    only that it isn't the security boundary some people assume it is.</dd>
+
+    <dt>Does this mean the Same-Origin Policy in a browser is enforced
+    "at the syscall level" too?</dt>
+    <dd>No, and this is an important distinction to hold onto going
+    into Track 2: SOP is a browser-application-level policy, enforced
+    by browser code before it ever gets near a syscall — the OS has no
+    concept of "origin" at all. The syscall boundary is what OS-level
+    sandboxing (Modules 9–11) uses; SOP and friends (Module 17 onward)
+    are enforced entirely inside the browser's own code, one layer up.</dd>
+
+    <dt>What actually happened with the "missing file got created" bug?</dt>
+    <dd>Covered in detail in <code>DECISIONS.md</code> — briefly: two
+    different Win32 and NT enums share the numeric value 1 for
+    different meanings (<code>CREATE_NEW</code> vs. <code>FILE_OPEN</code>),
+    and an early draft mixed them up. It's kept in the docs as a real,
+    concrete illustration of "these are two different vocabularies,"
+    which is this module's whole point.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You've now seen the syscall boundary from the outside — proving it
+    exists as a single chokepoint by reaching through it two different
+    ways. Module 4 turns the lens on the process itself: you'll inspect
+    a real process's own kernel-tracked structure, laying the
+    groundwork for Module 5's proof that spawning a process creates a
+    genuinely separate address space.
+  </p>
+
+  <div class="module-footer">
+    <a href="../02_privilege_rings/tutorial.html">← Module 02: privilege_rings</a>
+    <a href="../04_process_anatomy/tutorial.html">Module 04: process_anatomy →</a>
+  </div>
+</div>
