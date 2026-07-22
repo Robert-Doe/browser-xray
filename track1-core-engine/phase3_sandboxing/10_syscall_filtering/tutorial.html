@@ -1,0 +1,204 @@
+<title>Module 10: syscall_filtering — The Kernel Says No, Regardless</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#e0763c;--accent-dim:#4a2814;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 1 · PHASE 3 · MODULE 10</span>
+  <h1>syscall_filtering</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: a process can be blocked from an entire CATEGORY of
+    operation — spawning any new process at all — enforced by the
+    kernel itself, regardless of what ordinary, unprivileged code
+    inside that process tries.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../09_least_privilege_tokens/tutorial.html">Module 9: least_privilege_tokens</a>
+    <a class="tag-link" href="../../../prerequisites/03_syscalls.html#syscall-boundary">the syscall boundary as a chokepoint</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    Module 9's badge could open some doors and not others, based on
+    printed clearance — but the badge holder could still, in principle,
+    try any door. This module is different: imagine a turnstile with a
+    hard mechanical counter bolted to it, pre-set to "admit exactly one
+    person, ever, for this event." It doesn't matter who the eleventh
+    person is, what badge they're holding, or how politely they ask —
+    the turnstile's arm is physically locked once the counter hits its
+    limit. No check of identity happens at all for the eleventh person,
+    because the mechanism refuses before identity is even relevant.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>The orchestrator creates a Windows Job Object — a kernel object
+    that can hold a group of processes under a shared set of limits.</li>
+    <li>It sets that job's <code>ActiveProcessLimit</code> to 1.</li>
+    <li>It spawns <code>probe_spawn_child.py</code> suspended, assigns
+    it to the job (filling the job's one allowed slot), then resumes it.</li>
+    <li>The probe — ordinary code, no awareness of any restriction —
+    calls <code>subprocess.run()</code>, the same call any Python script
+    would use to spawn a helper process.</li>
+    <li>Because any child it spawns would automatically join its
+    parent's job (Windows' default behavior) and the job is already at
+    its limit, the OS refuses to create the new process at all.</li>
+    <li>The refusal surfaces as an ordinary <code>OSError</code>, not a
+    crash — the probe simply cannot make this particular syscall succeed.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>=== Part A: probe_spawn_child.py running WITHOUT any Job Object restriction ===
+[orchestrator] spawned unrestricted probe, PID 39260
+spawn attempt SUCCEEDED: child said 'a new process ran'
+
+=== Part B: probe_spawn_child.py running INSIDE a Job Object (ActiveProcessLimit=1) ===
+[orchestrator] created a Job Object with ActiveProcessLimit=1
+[orchestrator] assigned PID 24744 to the job -- it now occupies the job's ONE permitted process slot
+spawn attempt BLOCKED by the OS: [WinError 1816] Not enough quota is available to process this command</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output. Identical code, identical interpreter — the
+    only difference between success and refusal was the Job Object.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>info["BasicLimitInformation"]["LimitFlags"] = win32job.JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+info["BasicLimitInformation"]["ActiveProcessLimit"] = 1
+win32job.SetInformationJobObject(job, win32job.JobObjectExtendedLimitInformation, info)
+...
+win32job.AssignProcessToJobObject(job, h_process)</code></pre>
+  <p>
+    Notice what <code>probe_spawn_child.py</code> itself contains: zero
+    awareness of Job Objects. It just calls
+    <code>subprocess.run()</code>. That's exactly the point — a
+    kernel-enforced restriction doesn't require the restricted code's
+    cooperation, unlike an application-level check that a bug (or an
+    attacker) could find a way around.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Put two different origins in two different, differently
+        restricted processes on purpose (Module 11)</li>
+        <li>Block a specific FILE or NETWORK operation this same way
+        (Job Objects mainly restrict resource counts/UI, not arbitrary
+        syscalls — real fine-grained syscall filtering on Windows needs
+        different, more specialized mechanisms than this module built)</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Contain a process's ability to spawn further processes,
+        unconditionally, at the OS level</li>
+        <li>Explain why kernel-enforced restrictions are categorically
+        stronger than restrictions the sandboxed code could observe and
+        route around</li>
+        <li>Combine this with Module 9's least-privilege token for a
+        two-layer restriction (this module's demo doesn't combine them,
+        but nothing stops you from doing so)</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track1-core-engine/phase3_sandboxing/10_syscall_filtering
+python run_job_object_demo.py</code></pre>
+
+  <div class="callout">
+    If Part B's spawn attempt UNEXPECTEDLY succeeds: double-check
+    you're running the exact provided script — a common mistake when
+    experimenting is assigning the process to the job AFTER resuming
+    it, opening a timing window where it could spawn its child before
+    the restriction takes effect. The provided script's
+    <code>CREATE_SUSPENDED</code> ordering exists specifically to
+    prevent that race; removing it can reintroduce the race.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      This module's DECISIONS.md describes an earlier attempt — Win32k
+      System Call Disable — that looked like it succeeded (every API
+      call returned success) but, on direct verification, hadn't
+      actually taken effect. Why is "the API returned success" not
+      sufficient evidence that a security mitigation is active? Think
+      about what you'd need to check instead, before revealing the answer.
+    </summary>
+    <div class="answer">
+      Because a success return value only tells you the function call
+      completed without an immediately-detected error — it says nothing
+      about whether the requested *effect* actually took hold, especially
+      for APIs (like process mitigation policies) that configure
+      something to be enforced later, at a different moment, by a
+      different code path. The only way to know a mitigation genuinely
+      works is to test the actual enforcement directly: attempt the
+      exact operation the mitigation claims to block, and observe
+      whether it's actually refused — which is precisely why this
+      module's own build process pivoted away from a mechanism that
+      "returned success" everywhere but demonstrably didn't work when
+      tested end-to-end, rather than writing tutorial content based on
+      the API's return codes alone. This is a genuinely transferable
+      security-research habit: distrust "no error was returned" as
+      proof of anything security-relevant; test the actual boundary.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why does the failure happen inside <code>CreateProcess</code>
+    itself, rather than at a separate "join the job" step?</dt>
+    <dd>Because Windows automatically adds a newly created child process
+    to its parent's Job Object by default (unless the job explicitly
+    allows "breakaway"). Since the new process would be joining a job
+    already at its limit, the creation itself is refused — there's no
+    separate step where it briefly exists outside the job first.</dd>
+
+    <dt>Could the restricted process detect it's in a job and behave
+    differently?</dt>
+    <dd>Yes, actually — <code>IsProcessInJob()</code> is a real,
+    callable Win32 API a process could use to check. But detecting the
+    restriction and being able to remove or bypass it are very different
+    things; nothing about knowing you're restricted lets ordinary code
+    escape a kernel-enforced Job Object limit.</dd>
+
+    <dt>Is this exactly what real Chromium does?</dt>
+    <dd>The same underlying primitive (Job Objects, including
+    active-process-count-style limits) is real and used by Chromium's
+    Windows sandbox, alongside several other layered restrictions
+    (integrity levels from Module 9, restricted tokens, and more) —
+    real production sandboxing typically combines many such mechanisms
+    rather than relying on just one, which is exactly why this course
+    builds them as separate, composable modules instead of one
+    monolithic "sandbox" module.</dd>
+
+    <dt>What's the difference between this and Module 9's restriction?</dt>
+    <dd>Module 9 restricted access to a specific, identified resource
+    (one file) based on a comparison between the process's credentials
+    and that resource's label. This module restricts an entire
+    <em>category</em> of operation (creating any process) with no
+    per-resource check involved at all — the refusal happens before the
+    kernel even considers what the new process would be.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You've now built both flavors of restriction — resource-specific
+    (Module 9) and category-wide (Module 10). Module 11 combines
+    everything Phase 2 and Phase 3 have built — process isolation, IPC,
+    least privilege — into the real architectural policy they all exist
+    to support: putting different web origins into different, mutually
+    isolated processes on purpose.
+  </p>
+
+  <div class="module-footer">
+    <a href="../09_least_privilege_tokens/tutorial.html">← Module 09: least_privilege_tokens</a>
+    <a href="../11_site_isolation_model/tutorial.html">Module 11: site_isolation_model →</a>
+  </div>
+</div>
