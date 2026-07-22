@@ -1,0 +1,199 @@
+<title>Module 25: js_lexer_parser — Structure Before a Single Thing Runs</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#3ca7c7;--accent-dim:#143a47;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 2 · PHASE 8 · MODULE 25 · FIRST JS-ENGINE MODULE</span>
+  <h1>js_lexer_parser</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: JavaScript source becomes a fully-structured AST — with
+    correct operator precedence and associativity — before a single
+    line of it has been executed anywhere.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../../phase6_parsing_dom/19_html_tokenizer/tutorial.html">Module 19: html_tokenizer</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A sentence diagram in grammar school didn't tell you what a
+    sentence MEANS — it told you its shape: which word is the subject,
+    which phrase modifies which noun, how clauses nest inside each
+    other. You could diagram a sentence perfectly and still never
+    "execute" it — diagramming and understanding-in-order-to-act are
+    two completely different operations, performed at two completely
+    different times. An AST is a sentence diagram for code: a precise,
+    complete map of structure and precedence, built entirely before
+    anyone asks "okay, now what does this actually DO."
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>The lexer turns raw source text into a flat stream of tokens —
+    numbers, strings, identifiers, keywords, operators — skipping
+    whitespace and comments entirely.</li>
+    <li>The parser reads that token stream top-down: statements first
+    (variable declarations, functions, if/while, returns), each of
+    which eventually needs to parse an expression.</li>
+    <li>Expressions are parsed via precedence climbing: a single loop
+    that only continues consuming an operator if its precedence meets
+    a minimum threshold — which is what makes <code>3 * 4</code> bind
+    tighter than the <code>+</code> next to it, automatically.</li>
+    <li>Function calls and member access (<code>.property</code>)
+    chain onto whatever came before them, left to right.</li>
+    <li>The result is a tree of plain data objects — a
+    <code>Program</code> containing statements containing expressions —
+    with no code anywhere that runs any of it.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>2 + 3 * 4;  ->  BinaryExpr('+', 2, BinaryExpr('*', 3, 4))
+2 * 3 + 4;  ->  BinaryExpr('+', BinaryExpr('*', 2, 3), 4)
+a = b = 5;  ->  AssignmentExpr('=', a, AssignmentExpr('=', b, 5))
+!x && y || z;  ->  BinaryExpr('||', BinaryExpr('&&', UnaryExpr('!', x), y), z)</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured parser output. Same operators, different source
+    order, genuinely different tree shapes — precedence made visible.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>def _parse_binary(self, min_precedence):
+    left = self._parse_unary()
+    while True:
+        token = self._peek()
+        if token.type != "OP" or token.value not in BINARY_PRECEDENCE:
+            break
+        precedence = BINARY_PRECEDENCE[token.value]
+        if precedence < min_precedence:
+            break
+        operator = self._advance().value
+        right = self._parse_binary(precedence + 1)
+        left = BinaryExpr(operator, left, right)
+    return left</code></pre>
+  <p>
+    One function, one small precedence table, and the entire
+    expression grammar falls out of it. The <code>precedence + 1</code>
+    on the recursive call is the one detail doing the real work: it
+    forces the right-hand side to bind only to operators STRICTLY
+    tighter than the current one, which is exactly what makes
+    <code>2 - 3 - 4</code> group as <code>(2 - 3) - 4</code> and not
+    the other way around.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Run any of this — an AST is inert data (Module 26 is the
+        first thing that executes it)</li>
+        <li>Parse object/array literals, arrow functions, template
+        strings, or <code>for</code> loops — a deliberately scoped
+        subset of real JS</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Explain precisely why operator precedence is a PARSING
+        concern, not a runtime one</li>
+        <li>Predict the exact AST shape for a given expression,
+        including tricky precedence/associativity cases</li>
+        <li>Implement a real precedence-climbing parser from first
+        principles</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track2-applied-layer/phase8_js_engine/25_js_lexer_parser
+python run_parser_demo.py</code></pre>
+
+  <div class="callout">
+    If parsing raises <code>SyntaxError: Unexpected token</code>: this
+    parser only supports a specific subset of JS (see Limits, above) —
+    check whether your test input uses something like an object
+    literal, an arrow function, or a <code>for</code> loop, none of
+    which this module implements.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      This parser builds the ENTIRE AST before Module 26 ever looks at
+      any of it. Why is that separation — fully parse first, execute
+      completely separately afterward — valuable even beyond keeping
+      this course's modules clean? Think about what a real JS engine
+      could check about your code before running a single line of it,
+      before revealing the answer.
+    </summary>
+    <div class="answer">
+      Because a complete AST lets an engine (or a tool) inspect and
+      validate the ENTIRE program's structure before committing to run
+      any of it — a syntax error in code that would only execute after
+      ten minutes of runtime can still be caught immediately, before
+      the program starts, precisely because parsing doesn't depend on
+      execution reaching that point. This is also the foundation real
+      engines build actual OPTIMIZATION on: V8's JIT compiler (which
+      Module 27 gestures toward) can analyze a fully-formed AST/bytecode
+      representation to decide how to optimize a function, well before
+      that function has even been called once. None of that is
+      possible if parsing and execution were interleaved — the
+      complete-structure-first approach this module builds is a
+      genuine prerequisite for both early error detection and later
+      optimization, not just a clean way to organize a course.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why are keywords their own token TYPE instead of just identifiers
+    that happen to say "if" or "while"?</dt>
+    <dd>Purely a clarity/convenience choice made at the lexer level —
+    tagging them as `KEYWORD` lets the parser's statement dispatch check
+    a token's TYPE rather than comparing strings against a keyword set
+    everywhere it might matter. Either approach can work correctly;
+    this one keeps the parser's own logic a little cleaner.</dd>
+
+    <dt>Why does this parser use Python `float` for every number, even
+    something like `5` that looks like an integer?</dt>
+    <dd>Because that's genuinely accurate to real JavaScript — JS has
+    exactly ONE numeric type (a 64-bit floating-point double) for every
+    number, with no separate integer type at all. Using `float`
+    throughout isn't a simplification; it's a faithful match to how JS
+    itself represents numbers.</dd>
+
+    <dt>What happens if I write `2 + 3 * ` with nothing after the
+    `*`?</dt>
+    <dd>The parser will eventually reach a token it can't turn into a
+    primary expression (likely a semicolon or EOF) and raise a
+    `SyntaxError` from `_parse_primary` — real, useful error behavior,
+    since a genuinely incomplete expression like this isn't valid JS
+    either.</dd>
+
+    <dt>Is precedence climbing the ONLY way to write an expression
+    parser?</dt>
+    <dd>No — the "one function per precedence level" approach (a
+    chain of `parse_or` → `parse_and` → `parse_equality` → ...) is
+    equally real and common, and produces identical results. Precedence
+    climbing is simply the more compact of two standard, correct
+    techniques.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You have a real AST. Module 26 builds the simplest possible way to
+    actually run it — a tree-walking interpreter that directly
+    evaluates each node — and measures exactly why that simplicity has
+    a real performance cost.
+  </p>
+
+  <div class="module-footer">
+    <a href="../../phase7_rendering/24_paint_and_composite/tutorial.html">← Module 24: paint_and_composite</a>
+    <a href="../26_tree_walking_interpreter/tutorial.html">Module 26: tree_walking_interpreter →</a>
+  </div>
+</div>
