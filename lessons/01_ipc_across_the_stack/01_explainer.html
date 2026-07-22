@@ -1,0 +1,78 @@
+<title>Cluster: IPC Across the Stack</title>
+<link rel="stylesheet" href="../../assets/design-system.css">
+<style>body{--accent:#d4a13c;--accent-dim:#473a14;}</style>
+
+<div class="page">
+  <span class="module-badge">CROSS-MODULE CLUSTER · RELATES TO MODULES 6, 7, 8, 15, 16</span>
+  <h1>IPC Across the Stack</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Five modules, one family of mechanisms. This page is the side-by-side
+    comparison no single module's own scope covers.
+  </p>
+
+  <h2><span class="num">00</span>Why This Is Centralized</h2>
+  <p>
+    Module 6 built pipes and sockets as raw OS primitives. Module 7
+    built shared memory as the deliberate exception to process
+    isolation. Module 8 built a custom, application-level protocol on
+    top of one of those primitives. Modules 15 and 16 pointed the
+    identical socket mechanism at the real internet, using a real,
+    standardized protocol (HTTP) instead of an invented one. Each
+    module's own job was to prove ONE mechanism worked, correctly, in
+    isolation. None of them was the right place to ask the more
+    practical question every one of these modules quietly assumed an
+    answer to: <strong>given a choice, which mechanism do you actually
+    reach for, and why?</strong>
+  </p>
+
+  <h2><span class="num">01</span>The Family, Side by Side</h2>
+  <table>
+    <tr><th>Mechanism</th><th>Module</th><th>Data crosses via</th><th>Addressing</th><th>Typical use</th></tr>
+    <tr><td>Named pipe</td><td>6</td><td>kernel-buffered message copy</td><td>a name (<code>\\.\pipe\...</code>)</td><td>same-machine, related processes</td></tr>
+    <tr><td>TCP socket</td><td>6, 15, 16</td><td>kernel-buffered stream copy</td><td>host + port</td><td>local OR cross-machine, standardized protocols</td></tr>
+    <tr><td>Shared memory</td><td>7</td><td>no copy — same physical pages</td><td>a name (<code>Local\...</code>)</td><td>same-machine, high-throughput, trusted parties</td></tr>
+    <tr><td>Custom message protocol (Module 8)</td><td>8</td><td>a socket, framed with a chosen wire format</td><td>a port + your own framing rules</td><td>structured control messages between YOUR OWN components</td></tr>
+    <tr><td>HTTP over TLS</td><td>15, 16</td><td>a socket, framed per a public, standardized spec</td><td>a URL</td><td>talking to systems you don't control, across trust boundaries</td></tr>
+  </table>
+
+  <h2><span class="num">02</span>The One Axis That Actually Matters: Trust</h2>
+  <div class="analogy-box">
+    Every one of these mechanisms answers the same underlying question
+    — "how does data cross a boundary?" — but the boundaries themselves
+    have wildly different trust levels, and that's what actually drives
+    the real choice, more than raw performance. Shared memory is only
+    ever appropriate between two components that already trust each
+    other completely, because it offers literally no message-boundary
+    enforcement — whoever's on the other end can write anything,
+    whenever, into memory you're also reading. HTTP over TLS sits at
+    the opposite end: it exists specifically to communicate with
+    parties you have NO inherent trust in at all, which is exactly why
+    it comes wrapped in explicit authentication (the TLS handshake,
+    Module 15) and an explicit, standardized wire format anyone can
+    independently implement and verify (Module 16).
+  </div>
+
+  <h2><span class="num">03</span>Where Real Chromium Sits on This Spectrum</h2>
+  <p>
+    Real Chromium's Browser Process ↔ Renderer Process link (which
+    Module 8's toy version models) uses Mojo, Chromium's own IPC
+    system — deliberately built as MESSAGE PASSING, not shared memory,
+    for exactly the trust-boundary reason above: the Renderer Process
+    is the LEAST trusted component in the entire architecture (it's
+    the one running attacker-influenced content), so the Browser
+    Process deliberately avoids ever mapping its own memory into it.
+    Where Chromium DOES use shared memory (some compositor/GPU buffer
+    handoffs), it's specifically for large, high-throughput data being
+    passed between components that are ALREADY within the same trust
+    boundary — matching this cluster's central point precisely.
+  </p>
+
+  <h2><span class="num">04</span>Deeper Dives</h2>
+  <ul>
+    <li><a href="02_deepdive_performance.html">Performance: why shared memory is fast, and what that actually costs you</a></li>
+    <li><a href="03_deepdive_trust_boundaries.html">Trust boundaries: matching the mechanism to who's on the other end</a></li>
+    <li><a href="04_deepdive_real_world_mojo.html">Real-world implementation: how Chromium's Mojo generalizes all of this</a></li>
+  </ul>
+
+  <p style="margin-top:2rem;"><a href="../README.md">← All clusters</a></p>
+</div>

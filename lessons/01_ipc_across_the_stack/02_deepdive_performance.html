@@ -1,0 +1,55 @@
+<title>Deep Dive: IPC Performance</title>
+<link rel="stylesheet" href="../../assets/design-system.css">
+<style>body{--accent:#d4a13c;--accent-dim:#473a14;}</style>
+
+<div class="page">
+  <span class="module-badge">DEEP DIVE · IPC ACROSS THE STACK</span>
+  <h1>Performance: Why Shared Memory Is Fast, and What That Costs You</h1>
+
+  <h2><span class="num">01</span>Where the Cost Actually Comes From</h2>
+  <p>
+    Every message-passing mechanism (pipes, sockets) shares one
+    unavoidable cost: at least one COPY of the data, from the sender's
+    memory into a kernel-managed buffer, then out again into the
+    receiver's memory (Module 6's <code>_recv_exact()</code> loop is
+    literally that second copy happening, one <code>recv()</code> call
+    at a time). Each copy costs real CPU time proportional to the data
+    size, plus a fixed per-call overhead for the syscall itself (Module
+    3's syscall boundary — every <code>send</code>/<code>recv</code> is
+    a real transition into the kernel and back).
+  </p>
+  <p>
+    Shared memory (Module 7) eliminates the copy entirely — both sides
+    are reading and writing the SAME physical pages, so "sending" data
+    is just... writing it, once. There's no kernel-mediated relay step
+    at all once the mapping exists.
+  </p>
+
+  <h2><span class="num">02</span>What You Give Up</h2>
+  <p>
+    Module 7's own demonstration already showed the real cost: shared
+    memory has NO built-in message boundaries or ordering guarantees.
+    Two processes writing to the same region without their own,
+    separately-built synchronization (locks, atomics, sequence numbers)
+    can genuinely race — one side reading a value the other side is
+    still in the middle of writing, a category of bug pipes and sockets
+    structurally cannot have, because every read only ever sees a
+    complete message the kernel already fully buffered.
+  </p>
+
+  <h2><span class="num">03</span>Why This Isn't Usually the Deciding Factor</h2>
+  <p>
+    In practice, the trust-boundary question (see the trust-boundaries
+    deep dive) usually settles the choice before performance ever
+    becomes the deciding factor — a Browser Process talking to a
+    Renderer Process needs message-passing's isolation guarantees FAR
+    more than it needs shared memory's raw speed for typical control
+    messages (loading a URL, reporting a navigation). Shared memory
+    gets reached for specifically when BOTH conditions are true at
+    once: the two sides already trust each other, AND the data volume
+    is large enough (video frames, large compositor buffers) that the
+    copy cost would be genuinely prohibitive at real-world scale.
+  </p>
+
+  <p style="margin-top:2rem;"><a href="01_explainer.html">← Back to the cluster overview</a></p>
+</div>

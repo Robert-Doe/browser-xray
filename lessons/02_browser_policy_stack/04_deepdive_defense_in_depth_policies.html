@@ -1,0 +1,71 @@
+<title>Deep Dive: Defense in Depth at the Policy Layer</title>
+<link rel="stylesheet" href="../../assets/design-system.css">
+<style>body{--accent:#d4a13c;--accent-dim:#473a14;}</style>
+
+<div class="page">
+  <span class="module-badge">DEEP DIVE · BROWSER POLICY STACK</span>
+  <h1>Defense in Depth at the Policy Layer</h1>
+
+  <p>
+    Module 35 proved defense in depth directly, at the OS/process
+    layer: two independent, individually-limited sandboxing mechanisms,
+    combined, closed gaps neither closed alone. The exact same pattern
+    holds one layer up, in the browser's own policy stack — worth
+    seeing explicitly, since it's easy to think of these five policies
+    as five independent features rather than a layered system.
+  </p>
+
+  <h2><span class="num">01</span>CSP as XSS's Second Layer, Not Its Fix</h2>
+  <p>
+    Module 32 made this explicit: CSP does not fix an unescaped-input
+    XSS bug. It's a SECOND layer that blunts the bug's most dangerous
+    consequence (arbitrary script execution) even when the FIRST layer
+    (proper output escaping) has already failed. A site with correct
+    escaping and no CSP is still reasonably safe from XSS. A site with
+    a real escaping bug and a correctly configured CSP policy is
+    ALSO still reasonably safe from the worst consequence of that bug
+    — two independent layers, either one alone providing real,
+    substantial protection, together providing more than either could
+    alone.
+  </p>
+
+  <h2><span class="num">02</span>SameSite as CSRF's Layer, Not a Replacement for CSRF Tokens</h2>
+  <p>
+    Module 32's toy bank server deliberately had NO CSRF token — a
+    named, flagged simplification specifically so the demo could
+    isolate SameSite's real effect. A genuinely well-defended real
+    server layers BOTH: a SameSite cookie attribute (browser-enforced,
+    free, but only as strong as the browser's own SameSite
+    implementation) AND a server-side CSRF token check (works
+    regardless of cookie behavior, but requires the server to
+    implement and verify it correctly). Relying on either alone is
+    weaker than the same two mechanisms combined — the identical
+    pattern Module 35 demonstrated with Job Objects and least-privilege
+    tokens.
+  </p>
+
+  <h2><span class="num">03</span>HSTS and TLS as Layered, Not Redundant</h2>
+  <p>
+    TLS (Module 15) authenticates and encrypts a connection once it's
+    established. HSTS (Module 31) ensures that connection GETS
+    established as HTTPS in the first place, rather than being silently
+    downgraded before TLS ever has a chance to run. Neither one
+    substitutes for the other — TLS with no HSTS is still vulnerable to
+    a first-visit or stripped-header downgrade; HSTS with a broken or
+    absent TLS implementation protects nothing, since there'd be no
+    real secure connection underneath the enforcement to begin with.
+  </p>
+
+  <h2><span class="num">04</span>The General Lesson</h2>
+  <p>
+    Across both this cluster and Module 35's OS-layer demonstration,
+    the same shape recurs: real security mechanisms are usually
+    narrower in scope than their name suggests, and real protection
+    comes from correctly identifying WHICH narrow gap each one closes,
+    then deliberately layering enough of them that an attacker has to
+    defeat several independent things at once — never from finding
+    "the one mechanism" that supposedly covers everything.
+  </p>
+
+  <p style="margin-top:2rem;"><a href="01_explainer.html">← Back to the cluster overview</a></p>
+</div>

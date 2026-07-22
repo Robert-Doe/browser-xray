@@ -1,0 +1,63 @@
+<title>Deep Dive: IPC and Trust Boundaries</title>
+<link rel="stylesheet" href="../../assets/design-system.css">
+<style>body{--accent:#d4a13c;--accent-dim:#473a14;}</style>
+
+<div class="page">
+  <span class="module-badge">DEEP DIVE · IPC ACROSS THE STACK</span>
+  <h1>Trust Boundaries: Matching the Mechanism to Who's on the Other End</h1>
+
+  <h2><span class="num">01</span>The Question Every Choice Actually Answers</h2>
+  <p>
+    Before asking "which IPC mechanism is fastest," the question that
+    actually determines correctness is: <strong>if the process on the
+    other end of this channel were fully compromised right now, what's
+    the worst thing that channel lets it do to me?</strong> This
+    course's own modules answer that question very differently for
+    each mechanism:
+  </p>
+  <ul>
+    <li><strong>Shared memory (Module 7):</strong> the worst case is
+    total — a compromised peer can write ANYTHING into memory you also
+    read, with no boundary checking at all. This is only acceptable
+    when the peer is already inside your own trust boundary.</li>
+    <li><strong>A named pipe or raw socket (Module 6):</strong> a
+    compromised peer can send you malformed or malicious MESSAGE
+    CONTENT, but cannot directly touch your memory — whatever damage it
+    does has to go through however your own code interprets the bytes
+    it sends.</li>
+    <li><strong>HTTP over TLS (Modules 15–16):</strong> built assuming
+    the peer might be fully adversarial from the start — hence
+    authentication (Module 15's certificate verification) and a
+    rigorously specified, widely-scrutinized wire format (Module 16),
+    rather than an ad hoc protocol only your own two components need to
+    agree on.</li>
+  </ul>
+
+  <h2><span class="num">02</span>Site Isolation's Real Consequence for This Choice</h2>
+  <p>
+    Module 11 proved that OS process separation alone doesn't stop a
+    determined, privileged peer from reaching across — real containment
+    needed an actual privilege/trust difference (an integrity-level
+    gap) layered on top. That finding applies DIRECTLY here: choosing
+    shared memory between two components is only as safe as your
+    actual confidence that neither one will ever become the "privileged
+    reader, compromised writer" pairing Module 11 demonstrated breaking
+    through. If there's any realistic path for one side of a shared
+    memory link to become attacker-controlled, that link is a liability
+    exactly matching Module 11's Part A result — not a hypothetical
+    one.
+  </p>
+
+  <h2><span class="num">03</span>A Concrete Rule of Thumb</h2>
+  <p>
+    Draw the trust boundary FIRST, based on what each side actually is
+    (your own code you fully control? A sandboxed, potentially
+    attacker-influenced renderer? A completely external, arbitrary
+    internet server?) — then let that answer dictate the mechanism, not
+    the other way around. Picking a fast mechanism first and hoping the
+    trust question works out is precisely how real, serious security
+    bugs get introduced into IPC-heavy systems.
+  </p>
+
+  <p style="margin-top:2rem;"><a href="01_explainer.html">← Back to the cluster overview</a></p>
+</div>

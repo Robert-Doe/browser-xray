@@ -1,0 +1,78 @@
+<title>Cluster: The Browser Policy Stack</title>
+<link rel="stylesheet" href="../../assets/design-system.css">
+<style>body{--accent:#d4a13c;--accent-dim:#473a14;}</style>
+
+<div class="page">
+  <span class="module-badge">CROSS-MODULE CLUSTER · RELATES TO MODULES 17, 18, 29, 30, 31</span>
+  <h1>The Browser Policy Stack</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Five real policies. One real page load runs through all five, in
+    order, each catching a genuinely different class of risk.
+  </p>
+
+  <h2><span class="num">00</span>Why This Is Centralized</h2>
+  <p>
+    Modules 17, 18, 29, 30, and 31 each proved ONE policy mechanism
+    correctly, in isolation — the right scope for learning each one
+    without the others' details bleeding in and confusing the specific
+    claim being tested. But "which of these five stops which kind of
+    attack" is the single most common real confusion practitioners
+    have about browser security, and untangling it requires seeing all
+    five together, in the actual order a real page load exercises
+    them.
+  </p>
+
+  <h2><span class="num">01</span>The Five, in One Table</h2>
+  <table>
+    <tr><th>Policy</th><th>Module</th><th>Decided by</th><th>Stops</th><th>Does NOT stop</th></tr>
+    <tr><td>HSTS / Mixed Content</td><td>31</td><td>browser, before the request is sent</td><td>silent HTTP downgrade</td><td>anything once the connection is genuinely HTTPS</td></tr>
+    <tr><td>SameSite</td><td>29</td><td>browser, per-request, based on cookie attribute + request context</td><td>a cookie riding along on an unrelated cross-site request</td><td>the cross-site request itself being sent (Module 32's CSRF lesson)</td></tr>
+    <tr><td>SOP</td><td>17</td><td>browser, after the response arrives</td><td>script reading a cross-origin response body</td><td>the cross-origin request being sent in the first place</td></tr>
+    <tr><td>CORS</td><td>18</td><td>server (declares), browser (enforces)</td><td>the SOP default, but ONLY for origins the server explicitly allows</td><td>anything for origins NOT allowed — SOP's default still applies</td></tr>
+    <tr><td>CSP</td><td>30</td><td>server (declares), browser (enforces before execution)</td><td>a script (even a successfully-injected one) from RUNNING</td><td>the injection itself — the underlying bug is still there</td></tr>
+  </table>
+
+  <h2><span class="num">02</span>The Real Order, on One Page Load</h2>
+  <ol class="steps">
+    <li>Before anything is sent: HSTS is checked (Module 31) — an
+    <code>http://</code> URL to a known HSTS host is rewritten to
+    <code>https://</code> before a single packet leaves the machine.</li>
+    <li>The request goes out. If it's cross-site, SameSite (Module 29)
+    decides which cookies ride along, based on the cookie's own
+    attribute AND the request's context (top-level nav vs. subresource,
+    safe vs. unsafe method).</li>
+    <li>If the request is cross-origin and "non-simple," a CORS
+    preflight (Module 18) happens FIRST, asking permission before the
+    real request is sent at all.</li>
+    <li>The response arrives. SOP (Module 17) decides whether the
+    calling script is allowed to read its body — checking, among other
+    things, whatever CORS headers (Module 18) the response carried.</li>
+    <li>If the response is a page containing scripts, CSP (Module 30)
+    gates which of them are even allowed to execute — checked before
+    execution, independent of everything above it.</li>
+  </ol>
+
+  <h2><span class="num">03</span>The Pattern Worth Noticing</h2>
+  <div class="analogy-box">
+    Every single one of these five policies is enforced by the
+    BROWSER, on the CLIENT side — never the server deciding at request
+    time, never a network-level restriction. The server's only role,
+    across all five, is DECLARING a policy (a CORS header, a CSP
+    header, an HSTS header, a cookie's SameSite attribute) — the
+    browser is what actually checks it, every time, and it's checking
+    a genuinely different thing at a genuinely different moment for
+    each one. This is the single throughline worth internalizing: "is
+    this safe" is never one check. It's five, at five different
+    moments, each answering a narrower question than it sounds like it
+    does.
+  </div>
+
+  <h2><span class="num">04</span>Deeper Dives</h2>
+  <ul>
+    <li><a href="02_deepdive_policy_interaction_order.html">The exact interaction order, worked through on one concrete example request</a></li>
+    <li><a href="03_deepdive_failure_history.html">Why each policy exists: the real gaps that motivated it</a></li>
+    <li><a href="04_deepdive_defense_in_depth_policies.html">Defense in depth at the policy layer, echoing Module 35's finale</a></li>
+  </ul>
+
+  <p style="margin-top:2rem;"><a href="../README.md">← All clusters</a></p>
+</div>

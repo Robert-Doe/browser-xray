@@ -1,0 +1,76 @@
+<title>Deep Dive: Why Each Policy Exists</title>
+<link rel="stylesheet" href="../../assets/design-system.css">
+<style>body{--accent:#d4a13c;--accent-dim:#473a14;}</style>
+
+<div class="page">
+  <span class="module-badge">DEEP DIVE · BROWSER POLICY STACK</span>
+  <h1>Why Each Policy Exists: The Real Gap That Motivated It</h1>
+
+  <p>
+    None of these five policies were designed in a vacuum — each one
+    closes a specific, real gap the others left open. Understanding the
+    GAP each one closes is a better mental model than memorizing what
+    each one "does" in isolation.
+  </p>
+
+  <h2><span class="num">01</span>SOP: The Original, Foundational Default</h2>
+  <p>
+    The Same-Origin Policy is the oldest of the five, dating to the
+    earliest days of client-side scripting — the moment browsers let
+    script read content from a response at all, SOME default boundary
+    on what that script could read was necessary, or any page could
+    silently read any other open tab's content. SOP's boundary (scheme
+    + host + port) was the original, and remains the default, answer.
+  </p>
+
+  <h2><span class="num">02</span>CORS: SOP's Own Default Was Sometimes Too Strict</h2>
+  <p>
+    Once real applications legitimately wanted controlled cross-origin
+    data sharing (a public API meant to be called from other sites'
+    JavaScript), SOP's all-or-nothing default had no mechanism for a
+    server to say "actually, I DO want to allow this." CORS is that
+    missing opt-in mechanism — invented specifically to give servers a
+    real, safe way to relax SOP's default on their own terms, rather
+    than developers reaching for unsafe workarounds to bypass it
+    entirely.
+  </p>
+
+  <h2><span class="num">03</span>SameSite: A Gap Neither SOP Nor CORS Ever Covered</h2>
+  <p>
+    SOP and CORS both govern whether a script can READ a cross-origin
+    response. Neither one, even correctly configured, does anything
+    about a request being SENT in the first place with the user's
+    ambient credentials (cookies) attached — the exact CSRF gap Module
+    32 demonstrated directly. SameSite's cookie-attribute mechanism was
+    introduced specifically to give servers a way to declare "don't
+    send my cookies on requests that didn't originate from my own
+    site," closing a gap SOP/CORS were never designed to address at
+    all.
+  </p>
+
+  <h2><span class="num">04</span>CSP: A Second Layer for When Input Handling Already Failed</h2>
+  <p>
+    SOP, CORS, and SameSite all govern cross-origin INTERACTIONS.
+    CSP addresses a different problem entirely: a page's OWN content
+    containing a script it never intended to run — the XSS scenario
+    Module 32 demonstrated. No cross-origin policy has anything to say
+    about that, because the malicious script arrived as part of the
+    page's OWN, same-origin content. CSP exists specifically as a
+    second, independent defensive layer for exactly this case.
+  </p>
+
+  <h2><span class="num">05</span>HSTS: Closing the Gap Below All Four Others</h2>
+  <p>
+    SOP, CORS, SameSite, and CSP all assume the connection they're
+    protecting is genuinely the one the user intended — none of them
+    defend against a network attacker silently downgrading a
+    connection from HTTPS to HTTP before any of those four policies
+    even get a chance to matter. HSTS closes that gap at a lower layer
+    than any of the other four operate at, which is exactly why it's
+    checked FIRST in the real interaction order (see the previous deep
+    dive) — every other policy in this stack implicitly assumes the
+    connection itself wasn't already compromised.
+  </p>
+
+  <p style="margin-top:2rem;"><a href="01_explainer.html">← Back to the cluster overview</a></p>
+</div>

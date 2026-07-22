@@ -1,0 +1,59 @@
+<title>Deep Dive: Real-World Implementation — Chromium's Mojo</title>
+<link rel="stylesheet" href="../../assets/design-system.css">
+<style>body{--accent:#d4a13c;--accent-dim:#473a14;}</style>
+
+<div class="page">
+  <span class="module-badge">DEEP DIVE · IPC ACROSS THE STACK</span>
+  <h1>Real-World Implementation: How Chromium's Mojo Generalizes All of This</h1>
+
+  <h2><span class="num">01</span>One System, Many Underlying Primitives</h2>
+  <p>
+    Module 8's toy browser shell built ONE specific message protocol
+    (length-prefixed JSON) over ONE specific transport (a TCP socket).
+    Real Chromium's Mojo IPC system solves a broader version of the
+    same problem: it provides message-passing "pipes" as a stable,
+    platform-independent abstraction, while the ACTUAL transport
+    underneath varies by platform — named pipes on Windows, Unix domain
+    sockets on POSIX systems — exactly the same menu of real OS
+    primitives this cluster's modules built directly.
+  </p>
+
+  <h2><span class="num">02</span>An Interface Definition Language, Not Hand-Rolled Framing</h2>
+  <p>
+    Module 8's <code>ipc_protocol.py</code> hand-defines its own
+    message shape and framing. Mojo instead uses a dedicated Interface
+    Definition Language (<code>.mojom</code> files) to describe message
+    shapes, from which Mojo generates the actual serialization code —
+    removing the entire class of hand-written framing bugs this course
+    deliberately walked through by hand (Module 16's HTTP-framing
+    subtleties, Module 8's own escaping bug) so a learner would feel
+    them directly at least once.
+  </p>
+
+  <h2><span class="num">03</span>Capability-Based Handles</h2>
+  <p>
+    A Mojo message pipe endpoint is itself a capability — holding one
+    is what grants the ability to send/receive on that specific
+    channel, and endpoints can be passed IN messages to delegate access
+    precisely, without a receiving process needing any broader
+    filesystem-style handle table access. This connects directly back
+    to Prerequisite 5's handle model (an opaque, access-scoped
+    reference, not a raw pointer) — Mojo is, in a real sense, that same
+    idea generalized into an entire cross-process object model.
+  </p>
+
+  <h2><span class="num">04</span>Shared Memory, Still Used Deliberately and Sparingly</h2>
+  <p>
+    Mojo does support shared-memory-backed regions
+    (<code>base::WritableSharedMemoryRegion</code> and friends) for
+    exactly the high-throughput, already-trusted-parties case this
+    cluster's performance deep dive describes — bitmap buffers between
+    the renderer and GPU process being a canonical real example. It's
+    the exception, deliberately reached for, not the default — matching
+    this course's own Module 7 framing precisely: the ONE deliberate
+    departure from message-passing's default isolation, chosen only
+    when the tradeoff is worth it.
+  </p>
+
+  <p style="margin-top:2rem;"><a href="01_explainer.html">← Back to the cluster overview</a></p>
+</div>

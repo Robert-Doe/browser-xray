@@ -1,0 +1,73 @@
+<title>Deep Dive: The Exact Policy Interaction Order</title>
+<link rel="stylesheet" href="../../assets/design-system.css">
+<style>body{--accent:#d4a13c;--accent-dim:#473a14;}</style>
+
+<div class="page">
+  <span class="module-badge">DEEP DIVE · BROWSER POLICY STACK</span>
+  <h1>The Exact Interaction Order, Worked Through</h1>
+
+  <h2><span class="num">01</span>The Scenario</h2>
+  <p>
+    A page at <code>https://app.example.com</code> runs a script that
+    calls <code>fetch("http://api.example.com/data")</code> — deliberately
+    picking a plain-HTTP, cross-origin (different host AND scheme)
+    target, so every single policy in this cluster has a real chance to
+    matter.
+  </p>
+
+  <h2><span class="num">02</span>Step by Step, in the Real Order</h2>
+  <ol class="steps">
+    <li><strong>HSTS check (Module 31), before anything is sent:</strong>
+    if the browser has previously seen an HSTS record for
+    <code>api.example.com</code>, the URL is rewritten to
+    <code>https://api.example.com/data</code> right here — before any
+    network activity at all. Assume, for this walkthrough, no such
+    record exists, so the request genuinely goes out over plain HTTP.</li>
+    <li><strong>SameSite check (Module 29), as the request is
+    constructed:</strong> since <code>app.example.com</code> and
+    <code>api.example.com</code> are different hosts but the SAME
+    registrable domain (<code>example.com</code>), this is a SAME-SITE
+    request — every cookie for <code>api.example.com</code> is attached
+    regardless of its SameSite value. (If the target had instead been a
+    genuinely different site, this step would filter cookies by
+    SameSite value and request context.)</li>
+    <li><strong>CORS preflight decision (Module 18):</strong> a plain
+    <code>fetch()</code> with no custom headers and the GET method is a
+    "simple" request — no preflight OPTIONS round trip happens. (A
+    <code>PUT</code> or a custom header would have triggered one, exactly
+    as Module 18 demonstrated.)</li>
+    <li><strong>The request is sent, in the clear, over HTTP</strong> —
+    mixed content doesn't apply here as a REQUEST-blocking mechanism
+    (Module 31's mixed-content handling governs SUBRESOURCES like
+    <code>&lt;img&gt;</code>/<code>&lt;script&gt;</code> tags embedded in
+    a page, not same-page <code>fetch()</code> calls, which have their
+    own separate "cross-origin request" handling above).</li>
+    <li><strong>The response arrives. SOP check (Module 17):</strong>
+    is <code>api.example.com</code> the same origin as
+    <code>app.example.com</code>? No (different host). Does the
+    response carry an <code>Access-Control-Allow-Origin</code> header
+    matching <code>https://app.example.com</code> (Module 18's actual
+    response-side check)? If yes, the script gets to read the body. If
+    not, the fetch resolves, but reading the body throws.</li>
+    <li><strong>CSP check (Module 30) — only relevant if the response
+    body were HTML containing scripts,</strong> which a JSON API
+    response typically isn't. If it were, script execution from that
+    content would separately be gated by <code>app.example.com</code>'s
+    OWN CSP policy, entirely independent of everything above.</li>
+  </ol>
+
+  <h2><span class="num">03</span>The Takeaway</h2>
+  <p>
+    Five checks, five different questions, five different moments —
+    and in this one example, only two of them (SameSite, SOP) actually
+    changed anything about the outcome, while the others were "checked
+    but not the deciding factor" for this SPECIFIC request. That's
+    normal and expected: most individual requests only really exercise
+    one or two of these five policies meaningfully. The value of
+    knowing all five is being able to correctly identify WHICH ones
+    matter for any given real scenario, rather than reaching for the
+    wrong one (or assuming one covers a gap it doesn't).
+  </p>
+
+  <p style="margin-top:2rem;"><a href="01_explainer.html">← Back to the cluster overview</a></p>
+</div>
