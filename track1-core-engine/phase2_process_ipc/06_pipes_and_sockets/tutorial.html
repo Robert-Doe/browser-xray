@@ -1,0 +1,202 @@
+<title>Module 6: pipes_and_sockets — No Channel, No Crossing</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#4fbf8f;--accent-dim:#1a3a2e;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 1 · PHASE 2 · MODULE 06</span>
+  <h1>pipes_and_sockets</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: two isolated processes can only exchange data through a
+    channel both sides deliberately, explicitly set up — by building
+    two working channels (a named pipe, a TCP socket) and then showing
+    both refuse to deliver anything when only one side shows up.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../../../prerequisites/07_ipc_channels.html#channel-definition">IPC as a general idea</a>
+    <a class="tag-link" href="../../../prerequisites/07_ipc_channels.html#kernel-mediation">kernel-mediated channels</a>
+    <a class="tag-link" href="../05_process_creation/tutorial.html">Module 5: process_creation</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A walkie-talkie only works if the person on the other end has their
+    own walkie-talkie, powered on, tuned to your exact channel. Owning a
+    walkie-talkie and knowing "channel 7 exists" gets you nothing by
+    itself — you can key the mic and talk all day into dead air. The
+    channel isn't a place that exists independently, waiting to be
+    found; it's created the moment both sides are actually tuned in
+    together, and it stops existing the moment either side isn't.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>The server process creates a named pipe (or binds a TCP socket)
+    at a specific, fixed address — a pipe name, or a (host, port) pair
+    — and waits.</li>
+    <li>The client process, started as a genuinely separate process,
+    connects to that <em>exact</em> address.</li>
+    <li>The kernel — which mediates both the pipe and the socket —
+    matches the two up and lets bytes cross.</li>
+    <li>A message goes from client to server, a reply goes back.</li>
+    <li>Separately, a client attempts to connect to an address <em>no
+    server ever set up</em> — same code, same logic, different target.</li>
+    <li>The kernel refuses immediately, because there was never a
+    matching side to connect to.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>=== Named pipe, Part A: a real channel ===
+[client] sent: 'hello from the client process'
+[client] received reply: '[server acknowledges]: hello from the client process'
+
+=== Named pipe, Part B: no server ever created this name ===
+[client] connection refused by the kernel, as expected:
+    winerror=2, funcname='CreateFile', strerror='The system cannot find the file specified.'
+
+=== TCP socket, Part A: a real channel ===
+[client] sent: 'hello over TCP'
+[client] received reply: '[server acknowledges]: hello over TCP'
+
+=== TCP socket, Part B: nothing listening on this port ===
+[client] connection timed out waiting for a response
+    (no RST received -- likely filtered rather than actively refused,
+    but still: no channel, no data crossed)</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output from both demos. Two different addressing
+    schemes, two different specific refusal behaviors — same underlying
+    claim confirmed both times.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>handle = win32file.CreateFile(
+    PIPE_NAME, win32file.GENERIC_READ | win32file.GENERIC_WRITE,
+    0, None, win32file.OPEN_EXISTING, 0, None,
+)</code></pre>
+  <p>
+    A client connecting to a named pipe uses the same
+    <code>CreateFile</code> function you'd use to open a regular file —
+    Windows treats named pipes as a kind of file in its object-manager
+    namespace. <code>OPEN_EXISTING</code> is the key detail: it tells
+    Windows "only succeed if this already exists," which is exactly why
+    Part B fails the way it does — there's nothing existing to open.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Let two processes share the same physical memory directly
+        (Module 7 — the deliberate, narrower exception)</li>
+        <li>Explain how a sandboxing policy could block a process from
+        creating a channel at all, even a legitimate one (Module 10)</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Build a real, working two-process message exchange over
+        either mechanism</li>
+        <li>Explain, with captured evidence, exactly what happens when
+        only one side of a channel exists</li>
+        <li>Recognize that "refused" and "timed out" can both mean
+        "no channel," depending on what's between the two endpoints</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track1-core-engine/phase2_process_ipc/06_pipes_and_sockets
+python run_pipe_demo.py
+python run_socket_demo.py</code></pre>
+
+  <div class="callout">
+    If <code>run_socket_demo.py</code>'s Part B prints a
+    <code>ConnectionRefusedError</code> instead of a timeout on your
+    machine — that's also a correct result, not a discrepancy. Which
+    one you see depends on whether something in your local network
+    stack (a firewall, a security product) answers an unused port's SYN
+    with an explicit RST or silently drops it. Both outcomes prove the
+    same thing: no data ever crossed. See <code>DECISIONS.md</code> for
+    the real difference we hit while building this.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      A malicious process on your machine knows the exact pipe name a
+      legitimate privileged service uses. Does knowing the name alone
+      let it read that service's traffic? Think about what
+      <code>CreateNamedPipe</code>'s security attributes parameter
+      (passed as <code>None</code> in this module) is for, before
+      revealing the answer.
+    </summary>
+    <div class="answer">
+      Not necessarily — and this module deliberately left a gap you
+      should notice. We passed <code>None</code> for
+      <code>CreateNamedPipe</code>'s security attributes, which means
+      "use default security," letting any process on the machine
+      connect. A real privileged service typically supplies an explicit
+      security descriptor restricting which users/processes may connect
+      at all. Knowing a channel's <em>address</em> (its name, or its
+      host+port) is necessary but not sufficient to use it — the kernel
+      still checks access rights on connection, the same way Module 4's
+      <code>OpenProcess</code> needed explicit granted rights, not just
+      a known PID. This module proved "a channel must be built"; it
+      deliberately did not build the access-control layer on top of
+      that, which is a real, separate concern in production code.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why message mode for the pipe instead of byte-stream mode?</dt>
+    <dd>Simplicity for this specific demo — see
+    <code>DECISIONS.md</code>. Message mode guarantees one
+    <code>WriteFile</code> call is received by exactly one matching
+    <code>ReadFile</code> call, so we don't have to handle partial
+    reads to make the point clearly.</dd>
+
+    <dt>Is a named pipe "faster" than a TCP socket on the same machine?</dt>
+    <dd>Generally yes, for local-only communication — a named pipe
+    avoids the TCP/IP stack's overhead (sequencing, checksums, flow
+    control) entirely, since it's a more direct OS-level construct. This
+    module doesn't benchmark that difference, but it's a real,
+    well-known reason real systems (including parts of Windows itself)
+    prefer named pipes or similar local-only IPC over loopback sockets
+    when both endpoints are guaranteed to be on the same machine.</dd>
+
+    <dt>Does Chromium's Mojo actually use named pipes or sockets?</dt>
+    <dd>Mojo's underlying transport is platform-specific and can use
+    several primitives depending on platform and need — including named
+    pipes on Windows and Unix domain sockets on POSIX systems — but the
+    architectural point this module makes (explicit, kernel-mediated,
+    mutually-established channels) holds regardless of which specific
+    primitive is underneath.</dd>
+
+    <dt>Why bind the TCP server to 127.0.0.1 and not 0.0.0.0?</dt>
+    <dd>Safety and scope — binding to <code>0.0.0.0</code> would make
+    the demo server reachable from other machines on the network, which
+    this module has no reason to do and deliberately avoids (see
+    <code>SAFETY_NOTES.md</code>).</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You've now built and broken real IPC channels. Module 7 builds the
+    deliberate exception to everything proven so far: shared memory,
+    where two processes agree to actually map the same physical pages
+    — and immediately inherit a new problem neither pipes nor sockets
+    have: no built-in message ordering, meaning both sides now need
+    their own synchronization.
+  </p>
+
+  <div class="module-footer">
+    <a href="../05_process_creation/tutorial.html">← Module 05: process_creation</a>
+    <a href="../07_shared_memory/tutorial.html">Module 07: shared_memory →</a>
+  </div>
+</div>
