@@ -1,0 +1,234 @@
+<title>Module 1: mem_addressing — Virtual Memory Is an Illusion You Can Prove</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#4fb3bf;--accent-dim:#1d3a3d;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 1 · PHASE 1 · MODULE 01</span>
+  <h1>mem_addressing</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: a virtual address is a per-process, per-run illusion — never
+    a fixed physical location — by running the identical program twice
+    and diffing what it sees.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../../../prerequisites/01_virtual_memory.html#address-space">virtual memory · address space</a>
+    <a class="tag-link" href="../../../prerequisites/01_virtual_memory.html#paging">pages &amp; page tables</a>
+    <a class="tag-link" href="../../../prerequisites/01_virtual_memory.html#aslr">ASLR</a>
+    <a class="tag-link" href="../../../prerequisites/06_bytes_hex_endianness.html#hex-literacy">reading hex addresses</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    You check into a hotel and the front desk says "you're in Room 214."
+    You go up, unlock 214, drop your bags. The next week you stay at the
+    <em>same hotel chain</em>, same city, and you're again told
+    "Room 214." Naturally you'd assume you're back in your old room —
+    except this time it's a different building entirely, the hotel just
+    reuses room numbers per booking. Nothing physical connects this
+    week's "214" to last week's "214." The number is a label the front
+    desk hands out fresh, per stay, that only means something in
+    combination with which stay you're currently on. Your program's
+    memory addresses work exactly like that room number: meaningful only
+    within this one run, re-issued from scratch the next time.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>You run <code>addr_dump.py</code>. Python's interpreter starts as
+    a brand-new OS process and asks Windows for a fresh virtual address
+    space — the OS has not yet decided where anything will live.</li>
+    <li>The OS loader picks base addresses for the executable, the
+    loaded DLLs, the heap, and the stack — partly randomized by ASLR —
+    and builds this process's private page tables mapping virtual pages
+    to physical RAM frames.</li>
+    <li>Your script creates a few objects (<code>local_int</code>,
+    <code>local_list</code>, a function). CPython's memory allocator
+    carves space for them out of the process's heap region.</li>
+    <li><code>id(obj)</code> returns CPython's internal notion of
+    identity, which — as a documented CPython implementation detail —
+    is the object's virtual address in this process.</li>
+    <li>For each address, the script calls the real Win32
+    <code>VirtualQuery</code> function, which asks the kernel to look up
+    that address in <em>this process's own</em> page tables and report
+    back the page's base, size, and permission bits.</li>
+    <li><code>prove_aslr_illusion.py</code> repeats all of the above
+    twice, as two <em>independent</em> processes, and diffs the results.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>object            run A address         run B address         identical?
+--------------------------------------------------------------------------
+fresh int         0x1F6330144B0         0x22E886E44B0         no
+list              0x1F633044080         0x22E88714080         no
+function          0x1F633050F40         0x22E88720F40         no
+__name__ string   0x1F632D7FB70         0x22E8845FB70         no
+
+Relative offset (list address - int address):
+    run A: 195536
+    run B: 195536</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output from this exact code (see Run It, below). Every
+    absolute address moved. The relative distance between two objects
+    allocated moments apart in the <em>same</em> run did not move at all.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <p>Here's the part of <code>addr_dump.py</code> doing the real work:</p>
+  <pre><code>kernel32 = ctypes.windll.kernel32
+kernel32.VirtualQuery.argtypes = [
+    ctypes.c_void_p,
+    ctypes.POINTER(MEMORY_BASIC_INFORMATION),
+    ctypes.c_size_t,
+]
+kernel32.VirtualQuery.restype = ctypes.c_size_t
+
+def query_page(address: int) -> MEMORY_BASIC_INFORMATION:
+    mbi = MEMORY_BASIC_INFORMATION()
+    written = kernel32.VirtualQuery(
+        ctypes.c_void_p(address), ctypes.byref(mbi), ctypes.sizeof(mbi)
+    )
+    ...
+    return mbi</code></pre>
+  <p>
+    This isn't a simulation of what an OS memory query would look like —
+    <code>kernel32.VirtualQuery</code> is the actual Windows API function,
+    called through ctypes with no emulation layer in between. The
+    <code>MEMORY_BASIC_INFORMATION</code> struct is hand-declared to
+    match Windows' real ABI byte-for-byte (see
+    <a href="DECISIONS.md">DECISIONS.md</a> for exactly why every field
+    and every padding byte is there). When this function call succeeds,
+    you are looking at the live, actual state of your process's own page
+    tables — the same data structure the CPU's MMU consults on every
+    single memory access your program makes.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Query <em>another</em> process's page tables (that needs a
+        process handle with the right access rights — Module 4)</li>
+        <li>Explain why two processes can't just read each other's
+        memory even by address-guessing (Module 5 proves this directly)</li>
+        <li>Say anything about what's <em>physically</em> in RAM — only
+        that the virtual mapping exists and has these permissions</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Read any address your own program prints and know it's a
+        per-run virtual assignment, not a fixed location</li>
+        <li>Explain, with real captured evidence, why ASLR defeats
+        hard-coded exploit addresses across process restarts</li>
+        <li>Decode a page's protection bits (R/W/X) from raw Win32
+        constants</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track1-core-engine/phase1_bare_metal/01_mem_addressing
+python addr_dump.py
+python prove_aslr_illusion.py</code></pre>
+  <p>Expected: <code>addr_dump.py</code> prints four objects' addresses
+  and page info. <code>prove_aslr_illusion.py</code> prints a table
+  where every "identical?" column says <code>no</code>, followed by a
+  <code>CONFIRMED</code> message.</p>
+
+  <div class="callout">
+    If <code>prove_aslr_illusion.py</code> ever prints an
+    <code>UNEXPECTED</code> result with a repeated address: this is not
+    automatically a broken demo. Some hardened/managed environments
+    disable ASLR system-wide, and there's a real (tiny) chance of
+    coincidental collision in a large address space. Check
+    <code>DECISIONS.md</code> before assuming something's wrong — and if
+    you genuinely have ASLR disabled, that's itself worth knowing about
+    your environment.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      If two DIFFERENT processes, running the identical script at the
+      identical moment, both printed the exact same numeric address —
+      say, both print <code>0x1F6330144B0</code> for their "fresh int" —
+      would that mean one process could read the other's data at that
+      address? Think it through before revealing the answer.
+    </summary>
+    <div class="answer">
+      No. A numeric coincidence in the address alone proves nothing,
+      because that number only has meaning <em>relative to a specific
+      process's page tables</em>. Process A's page tables might map
+      <code>0x1F6330144B0</code> to physical frame X; Process B's
+      completely separate page tables might map that same virtual number
+      to physical frame Y, or to nothing at all (an unmapped page,
+      causing a fault). There is no way to "reach across" using the
+      number itself — you would need an actual handle into the other
+      process's address space (which the OS tightly controls; see
+      Module 4 and Module 9) to have any hope of touching its memory.
+      This is exactly why matching addresses is not a security concern
+      by itself, and why isolation depends on <em>separate page tables</em>,
+      not on addresses being unpredictable.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Isn't <code>id()</code> just a Python thing, unrelated to "real" memory?</dt>
+    <dd>In CPython specifically, no — it's documented to return the
+    object's actual memory address. This is a CPython implementation
+    detail, not a language-spec guarantee, which is exactly why
+    <code>DECISIONS.md</code> flags it as an external contract we're
+    relying on rather than something inherent to Python as a language.</dd>
+
+    <dt>Why does the region size (901120 bytes) look so oddly specific?</dt>
+    <dd>That's CPython's own heap arena allocator (pymalloc) requesting
+    memory from the OS in its own chunk sizes — that number is a
+    property of CPython's allocator, not of Windows or the CPU. Different
+    Python versions or a different allocator would show different, but
+    equally "real," numbers.</dd>
+
+    <dt>Could I run the equivalent of this on Linux?</dt>
+    <dd>Yes, conceptually — you'd read <code>/proc/self/maps</code>
+    instead of calling <code>VirtualQuery</code>, since that's the
+    Linux-native way to query your own process's page mappings. This
+    course's primary track builds the Windows version, per the tools
+    decision in the root ROADMAP; the Linux equivalent is a fair exercise
+    but isn't built here.</dd>
+
+    <dt>Doesn't ASLR mean my program is "safe" from memory bugs?</dt>
+    <dd>No — and this is exactly the trap Module 12 exists to walk you
+    into. ASLR only raises the cost of guessing an address; a single
+    information leak (a bug that reveals even one real address) can
+    collapse the randomization instantly, because once you know one
+    address you often know the offsets to everything else.</dd>
+
+    <dt>Why does <code>prove_aslr_illusion.py</code> parse text with regex
+    instead of using a cleaner data format?</dt>
+    <dd>Deliberate tradeoff, explained in <code>DECISIONS.md</code>:
+    <code>addr_dump.py</code>'s output is optimized for a human reading
+    it directly first, not for a downstream parser.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You've now proven that addresses are per-run illusions — but you
+    haven't yet proven the boundary that <em>enforces</em> that illusion.
+    Module 2 goes one layer down: it proves that your code, running at
+    Ring 3, physically cannot execute a privileged CPU instruction
+    without the hardware itself refusing — the mechanism that makes
+    "user mode can't touch kernel territory" a hardware fact rather than
+    an OS-enforced courtesy.
+  </p>
+
+  <div class="module-footer">
+    <a href="../../../prerequisites/prerequisite.html">← Prerequisites</a>
+    <a href="../02_privilege_rings/tutorial.html">Module 02: privilege_rings →</a>
+  </div>
+</div>
