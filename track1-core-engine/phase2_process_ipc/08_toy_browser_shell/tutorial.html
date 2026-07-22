@@ -1,0 +1,223 @@
+<title>Module 8: toy_browser_shell — The Seed of Everything After This</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#2fbf9f;--accent-dim:#123a33;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 1 · PHASE 2 · MODULE 08</span>
+  <h1>toy_browser_shell</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: "one Browser Process, N Renderer Processes, exchanging
+    structured IPC messages" is a real, runnable architecture — built
+    entirely from primitives this course already proved, not a diagram
+    taken on faith.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../05_process_creation/tutorial.html">Module 5: process_creation</a>
+    <a class="tag-link" href="../06_pipes_and_sockets/tutorial.html">Module 6: pipes_and_sockets</a>
+    <a class="tag-link" href="../../../prerequisites/06_bytes_hex_endianness.html#endianness">network byte order</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A restaurant's front-of-house manager never cooks. They take an
+    order, walk it to the kitchen, and a specific line cook — one
+    dedicated person, working at their own station with their own
+    tools, not sharing a cutting board with anyone — prepares that one
+    dish and calls back "table 4's order is up." The manager never
+    reaches into the kitchen to grab the food themselves, and the line
+    cook never wanders out to seat guests. Everything crosses the pass
+    window as a spoken order and a spoken "it's ready" — never as the
+    manager grabbing raw ingredients directly off a cook's station. This
+    is the entire shape of a multi-process browser: one coordinating
+    process, dedicated workers who don't share their internals, and
+    everything between them travels as an explicit, spoken message.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>The Browser Process starts, opens a TCP listening socket, and
+    for each tab it wants to open, spawns a genuinely separate Renderer
+    Process (Module 5's guarantee: separate address space).</li>
+    <li>Each Renderer Process connects back to the Browser Process's
+    socket and announces its own PID.</li>
+    <li>The Browser Process sends that renderer a structured
+    <code>load_url</code> message — length-prefixed JSON, the exact
+    framing <code>ipc_protocol.py</code> defines.</li>
+    <li>The renderer (today: a stand-in, not a real parser) "renders"
+    the URL and sends back a structured <code>loaded</code> response.</li>
+    <li>The Browser Process prints each tab's result, attributing it to
+    the specific renderer PID that produced it.</li>
+    <li>The Browser Process sends each renderer a <code>shutdown</code>
+    message; each renderer acknowledges and exits cleanly.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>[browser] Browser Process PID 28268 listening on port 51900
+[browser] opening 3 tab(s), one Renderer Process each
+
+[browser] tab 0: spawned Renderer Process PID 36564 for https://example.com  (genuinely separate from Browser PID 28268: True)
+[browser] tab 1: spawned Renderer Process PID 38992 for https://example.org  (genuinely separate from Browser PID 28268: True)
+[browser] tab 2: spawned Renderer Process PID 9988 for https://example.net  (genuinely separate from Browser PID 28268: True)
+
+[browser] tab 0 loaded by renderer PID 36564: title='(toy render of https://example.com)'
+[browser] tab 1 loaded by renderer PID 38992: title='(toy render of https://example.org)'
+[browser] tab 2 loaded by renderer PID 9988: title='(toy render of https://example.net)'
+
+[browser] tab 0 renderer (PID 36564) shut down cleanly
+[browser] tab 1 renderer (PID 38992) shut down cleanly
+[browser] tab 2 renderer (PID 9988) shut down cleanly
+
+[browser] all 3 tabs closed. Browser Process (PID 28268) exiting.</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output. Four genuinely distinct OS processes (one
+    browser, three renderers), each response correctly attributed to
+    the renderer that actually produced it.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>for tab_id, url in enumerate(urls):
+    proc = subprocess.Popen([sys.executable, "renderer_process.py", str(PORT)])
+    conn, _addr = server.accept()
+    hello = recv_message(conn)
+    renderer_pid = hello["pid"]
+    ...
+for tab in tabs:
+    send_message(tab.conn, {"type": "load_url", "url": tab.url})
+    response = recv_message(tab.conn)</code></pre>
+  <p>
+    Notice what's <em>not</em> here: no shared variable, no shared
+    memory, no direct function call from browser code into renderer
+    code. Every single interaction between the Browser Process and a
+    Renderer Process is a message, over a socket, in the exact
+    length-prefixed format <code>ipc_protocol.py</code> defines. This
+    is a real architectural constraint, not a simplification — real
+    Chromium's Browser Process and Renderer Processes are similarly
+    constrained to communicate only through Mojo IPC.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Actually parse HTML/CSS/JS — the renderer's "loading" is
+        entirely simulated (Track 2, Phases 6–8 build the real thing)</li>
+        <li>Restrict what a renderer process is allowed to do at the OS
+        level — every renderer here runs with full, unrestricted
+        privileges (Module 9)</li>
+        <li>Put different origins in different processes on purpose —
+        this module doesn't know what an "origin" is yet (Module 11)</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Spawn and orchestrate multiple genuinely isolated worker
+        processes from one coordinator</li>
+        <li>Design and implement your own length-prefixed message
+        protocol over a byte-stream socket</li>
+        <li>Reason precisely about what "the browser" and "a tab" map
+        to at the OS process level</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track1-core-engine/phase2_process_ipc/08_toy_browser_shell
+python browser_process.py
+python browser_process.py https://a.example https://b.example</code></pre>
+  <p>The second form lets you pass your own list of URLs as separate tabs.</p>
+
+  <div class="callout">
+    If the Browser Process hangs at <code>server.accept()</code>: a
+    previous run may have left port 51900 in a lingering state, or a
+    firewall prompt for Python is waiting for a response the first time
+    you run this. Approve any Windows Firewall prompt for local
+    loopback access, or wait ~30s for the OS to release the prior port
+    binding and retry.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      Suppose one Renderer Process crashes mid-render (imagine
+      <code>renderer_process.py</code> raised an unhandled exception
+      right after connecting). What happens to the other tabs' Renderer
+      Processes, given this module's architecture? Think about what is
+      — and isn't — shared between them before revealing the answer.
+    </summary>
+    <div class="answer">
+      Nothing happens to them — they keep running completely
+      unaffected. Because each Renderer Process is a genuinely separate
+      OS process (Module 5) with its own address space, a crash in one
+      cannot corrupt another's memory, and because each has its own
+      dedicated socket connection to the Browser Process, one
+      connection breaking doesn't affect the others' message exchange.
+      The Browser Process would simply see that one specific
+      <code>recv_message()</code> call fail (a `ConnectionError`, per
+      <code>ipc_protocol.py</code>'s framing code) for that one tab's
+      socket, while the other tabs' sockets remain completely healthy.
+      This is precisely the real-world payoff of the multi-process
+      architecture: "one tab crashed" instead of "the whole browser
+      crashed," which was a genuine, user-visible improvement when
+      Chrome first shipped this architecture in 2008, replacing the
+      single-process model most browsers used before then.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why does the renderer need to send a "hello" message with its
+    own PID? Doesn't the Browser Process already know it, from spawning it?</dt>
+    <dd>Good catch — <code>subprocess.Popen</code> does return the
+    child's PID (<code>proc.pid</code>) immediately. The "hello"
+    message is deliberately redundant here for a specific teaching
+    reason: it demonstrates that the IPC channel itself carries the
+    renderer's identity, independent of what the Browser Process already
+    knew from spawning it — which matters once modules build stricter
+    identity or capability checks over this same channel later.</dd>
+
+    <dt>Is this actually how many tabs Chromium can open, one process each?</dt>
+    <dd>Conceptually yes, though real Chromium applies additional
+    process-reuse heuristics (e.g. grouping same-site tabs, limiting
+    total renderer count under memory pressure) rather than a strict
+    one-process-per-tab rule always. This module's simplified
+    one-per-tab model is the right starting point; Module 11 refines it
+    toward the real, origin-aware policy.</dd>
+
+    <dt>What would happen if two tabs requested the exact same URL?</dt>
+    <dd>With this module's code, they'd still get two separate Renderer
+    Processes, each independently "rendering" its own copy — no
+    sharing or deduplication happens. Whether and how a real browser
+    might share resources between same-origin tabs is exactly the kind
+    of nuance Module 11 (Site Isolation) exists to address deliberately,
+    not by accident.</dd>
+
+    <dt>Why length-prefix the JSON instead of just using newline-delimited
+    JSON (one JSON object per line)?</dt>
+    <dd>Newline-delimited JSON is a real, valid alternative — and
+    simpler for this exact use case. Length-prefixing was chosen because
+    it generalizes to binary payloads (a real browser IPC message might
+    carry raw bytes, not just text) without needing an escaping scheme,
+    and it's the same framing shape Module 15's HTTP/TLS work will
+    recognize in a different protocol later.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You've now built the container. Module 9 starts filling in the
+    security model that container needs: giving each Renderer Process a
+    deliberately <em>reduced</em> set of OS-level permissions — proving,
+    directly, that a spawned process can be stripped of rights its
+    parent still holds.
+  </p>
+
+  <div class="module-footer">
+    <a href="../07_shared_memory/tutorial.html">← Module 07: shared_memory</a>
+    <a href="../../phase3_sandboxing/09_least_privilege_tokens/tutorial.html">Module 09: least_privilege_tokens →</a>
+  </div>
+</div>
