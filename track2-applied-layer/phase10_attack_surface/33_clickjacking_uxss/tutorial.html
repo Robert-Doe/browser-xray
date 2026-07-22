@@ -1,0 +1,203 @@
+<title>Module 33: clickjacking_uxss — Two Very Different Kinds of "Wrong"</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#c73f8f;--accent-dim:#3f1738;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 2 · PHASE 10 · MODULE 33</span>
+  <h1>clickjacking_uxss</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: clickjacking exploits a real, deliberate separation between
+    compositing and input hit-testing (Module 24's territory); UXSS
+    exploits a categorically different, more severe gap in the browser
+    engine's own origin enforcement (Module 11's territory) — not a
+    bug in any individual website.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../../phase7_rendering/24_paint_and_composite/tutorial.html">Module 24: paint_and_composite</a>
+    <a class="tag-link" href="../../../track1-core-engine/phase3_sandboxing/11_site_isolation_model/tutorial.html">Module 11: site_isolation_model</a>
+    <a class="tag-link" href="../32_xss_csrf_on_toy_browser/tutorial.html">Module 32: xss_csrf_on_toy_browser</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    Clickjacking is like a prankster placing a perfectly clear pane of
+    glass with an invisible "sign here" button exactly over a vending
+    machine's visible "get a free sample" button — you press what you
+    see, but the mechanism underneath the glass is what actually
+    receives your finger's pressure, not what your eyes are looking at.
+    UXSS is an entirely different kind of failure: not a trick played
+    on your eyes at all, but a genuine flaw in the vending machine's own
+    internal wiring that lets ANY customer's coin slot secretly open a
+    completely different customer's locked compartment — a flaw in the
+    machine itself, regardless of which specific customers happen to be
+    using it.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li><strong>Clickjacking:</strong> two layers occupy the exact same
+    screen coordinates — a visible one from origin A, a nearly-invisible
+    one from origin B, with origin B's layer on top (higher z-index).</li>
+    <li>A click at that coordinate is resolved by hit-testing: highest
+    z-index wins, opacity is never consulted.</li>
+    <li>The user perceives clicking origin A's visible button; the
+    click actually reaches origin B's invisible one.</li>
+    <li>The real defense (<code>frame-ancestors</code>) works
+    differently: origin B's page simply refuses to be embedded in a
+    frame AT ALL — checked before any framing succeeds.</li>
+    <li><strong>UXSS:</strong> a browser engine function that's supposed
+    to check origin before returning cross-window data has that check
+    disabled (modeling a real engine bug).</li>
+    <li>A script from a completely unrelated origin calls that function
+    and receives another origin's real document content directly.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>=== Clickjacking, BEFORE ===
+  User perceives themselves clicking: 'Play Video button' at (200, 120)
+  Click ACTUALLY delivered to: 'Confirm $500 Transfer button' (origin=bank.example, opacity=0.02)
+
+=== Clickjacking, AFTER (frame-ancestors 'none') ===
+  Can video-site.example embed bank.example in an iframe at all? False
+
+=== UXSS, BEFORE (missing origin check) ===
+  Engine returned: "<div id='inbox'>...<input id='authToken' value='SECRET_AUTH_TOKEN_XYZ'>"
+
+=== UXSS, AFTER (origin check enforced) ===
+  BLOCKED, as expected: blocked: https://evil.com is not same-origin with https://webmail.example</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output for both attack classes, both defenses.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>candidates = [l for l in layers if point_in_bounds(l, x, y)]
+return max(candidates, key=lambda layer: layer.z_index)  # opacity never checked</code></pre>
+  <p>
+    That missing opacity check isn't a bug — real compositors genuinely
+    don't consult it for hit-testing, because doing so would break
+    entirely legitimate fade-in animations and semi-transparent
+    interactive overlays. Clickjacking exploits a real, correct design
+    decision, not a flaw in it.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Render an actual overlay visually — this module works
+        entirely in coordinate/z-index arithmetic, no real pixels</li>
+        <li>Reproduce any SPECIFIC historical browser UXSS CVE — this
+        models the general shape of the bug class, not one particular
+        real, patched vulnerability</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Explain precisely why clickjacking works at the mechanism
+        level, not just "invisible overlays are bad"</li>
+        <li>Explain the real, categorical difference between XSS/CSRF
+        (Module 32 — bugs in individual sites) and UXSS (a bug in the
+        browser engine itself)</li>
+        <li>Explain why <code>frame-ancestors</code> is a stronger
+        defense than trying to detect deceptive overlays after the fact</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track2-applied-layer/phase10_attack_surface/33_clickjacking_uxss
+python run_attack_demo.py</code></pre>
+
+  <div class="callout">
+    If the clickjacking demo's "click target" doesn't match what you
+    expect: double check both layers' <code>bounds</code> tuples
+    actually overlap at the tested (x, y) — a common experimentation
+    mistake is moving one layer's bounds slightly and forgetting the
+    other, which changes which layer is even a CANDIDATE before z-index
+    is ever considered.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      Given that UXSS is a bug in the BROWSER ENGINE itself, not any
+      individual website, would Module 32's CSP defense (script-src,
+      no unsafe-inline) have stopped this module's UXSS demonstration?
+      Think about WHERE in the process each defense actually operates
+      before revealing the answer.
+    </summary>
+    <div class="answer">
+      No — and this is the single most important distinction this
+      module draws. CSP is a policy the WEBSITE declares, enforced by a
+      CORRECTLY-FUNCTIONING browser engine that checks it. UXSS, by
+      definition, is a bug in that enforcement machinery itself — if the
+      engine's own origin-checking code has a flaw, no amount of
+      correct CSP configuration on the victim's part changes anything,
+      because the bug lives one layer BELOW where CSP operates. This is
+      exactly why real UXSS vulnerabilities are considered so severe:
+      they can't be defended against by any individual website's own
+      configuration at all — the only real fix is a browser engine
+      patch, which is also why these bugs, when found, are typically
+      reported directly to browser vendors (as critical security bugs)
+      rather than being something a website operator could mitigate on
+      their own end.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why doesn't the browser just check opacity and refuse clicks on
+    nearly-invisible elements?</dt>
+    <dd>Because that would break real, legitimate UI patterns — a
+    button fading in over 300ms, or a semi-transparent modal that's
+    genuinely meant to be clickable while partially see-through. There's
+    no opacity threshold that reliably distinguishes "legitimate
+    low-opacity UI" from "malicious invisible overlay" without breaking
+    real use cases, which is exactly why the real defense
+    (`frame-ancestors`) works at a completely different layer —
+    preventing the embedding itself, not trying to police opacity.</dd>
+
+    <dt>Is `X-Frame-Options` the same thing as `frame-ancestors`?</dt>
+    <dd>Closely related — `X-Frame-Options` (an older header, values
+    like `DENY` or `SAMEORIGIN`) was the original clickjacking defense;
+    `frame-ancestors` (a CSP directive) is its modern, more flexible
+    successor, supporting a list of specific allowed embedding origins
+    rather than just deny-all or same-origin-only. Real sites often
+    send both, for compatibility with older browsers.</dd>
+
+    <dt>Could UXSS and clickjacking ever combine in one real attack?</dt>
+    <dd>In principle, yes — they exploit entirely independent
+    mechanisms, so nothing prevents a sufficiently motivated real attack
+    from using both if both gaps happened to exist simultaneously. This
+    module demonstrates each in isolation specifically to keep their
+    genuinely separate root causes clear.</dd>
+
+    <dt>Why is the UXSS demo's "engine bug" just a boolean flag instead
+    of something more realistic?</dt>
+    <dd>Precisely to isolate the CONSEQUENCE of a missing origin check
+    from the specific, often highly technical mechanism a real bug
+    might use to bypass it (a parsing edge case, a race condition, an
+    incorrectly cached security decision). This module's job is proving
+    what happens once such a check is missing, not cataloging every real
+    way one could historically go missing.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    Module 34 demonstrates a subtler, harder-to-defend-against attack:
+    a timing side-channel that leaks cross-origin data even when SOP
+    and site isolation correctly block every DIRECT read attempt — the
+    exact motivation behind Site Isolation's post-Spectre strengthening.
+  </p>
+
+  <div class="module-footer">
+    <a href="../32_xss_csrf_on_toy_browser/tutorial.html">← Module 32: xss_csrf_on_toy_browser</a>
+    <a href="../34_side_channel_timing/tutorial.html">Module 34: side_channel_timing →</a>
+  </div>
+</div>
