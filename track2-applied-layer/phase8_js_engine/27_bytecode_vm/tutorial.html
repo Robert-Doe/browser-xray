@@ -1,0 +1,211 @@
+<title>Module 27: bytecode_vm — A Real, Measured 1.84x</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#2f9ec7;--accent-dim:#0f3947;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 2 · PHASE 8 · MODULE 27</span>
+  <h1>bytecode_vm</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: compiling to bytecode before execution is a deliberate
+    engineering response to real interpreter overhead — measured, in
+    the same process, against the identical program Module 26 ran.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../26_tree_walking_interpreter/tutorial.html">Module 26: tree_walking_interpreter</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    Remember Module 26's cook re-reading the whole cookbook before
+    every step? Now imagine that same cook, before starting to actually
+    cook, first transcribes the recipe onto a single strip of index
+    cards, one short instruction per card, in order: "crack egg,"
+    "whisk," "add flour." Cooking now means flipping through a stack of
+    cards — plain, terse, unambiguous instructions — one at a time.
+    Nobody re-reads the whole cookbook anymore; the "which recipe, which
+    step" question was answered ONCE, during the transcribing, and never
+    needs asking again. That transcription step is the compiler. The
+    stack of cards is the bytecode.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>The compiler walks the AST exactly once, per function, emitting
+    a flat list of small instructions — <code>LOAD_CONST</code>,
+    <code>LOAD_VAR</code>, <code>BINARY_OP</code>, <code>JUMP_IF_FALSE</code>,
+    <code>CALL</code>, <code>RETURN</code>, and a few others.</li>
+    <li>Control flow (<code>if</code>, <code>while</code>) becomes
+    explicit jump instructions with computed target addresses — no more
+    tree structure, just "go to instruction N."</li>
+    <li>The VM runs a tight loop: read the instruction at the current
+    program counter, advance the counter, act on a small value stack,
+    repeat.</li>
+    <li>Every one of <code>fib(24)</code>'s ~150,000 calls now reruns
+    this same tight loop over a SHORT, ALREADY-COMPILED list of
+    instructions — no AST, no <code>isinstance</code> chains, at all.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>=== Correctness: compiler+VM matches Module 26's tree-walker ===
+  recursion: VM=55.0, interpreter=55.0, expected=55.0
+  loop + mutation: VM=4950.0, interpreter=4950.0, expected=4950.0
+
+=== Benchmark: fib(24), identical source, same process ===
+Tree-walking interpreter (Module 26): 1295.0 ms (result=46368)
+Bytecode VM (Module 27):               702.8 ms (result=46368)
+
+Speedup: 1.84x</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured, same-process, back-to-back measurement — not a
+    number quoted from documentation, but one this exact run produced.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>while frame.pc < len(instructions):
+    instr = instructions[frame.pc]
+    frame.pc += 1
+    op = instr.op
+    if op == "LOAD_CONST":
+        stack.append(instr.arg)
+    elif op == "BINARY_OP":
+        right = stack.pop(); left = stack.pop()
+        stack.append(apply_binary(instr.arg, left, right))
+    ...</code></pre>
+  <p>
+    Compare this to Module 26's <code>evaluate()</code>: no recursive
+    Python function calls per AST node, no chain of
+    <code>isinstance</code> checks against node classes. Just array
+    indexing, an integer counter, and a short dispatch on a plain
+    string. That structural difference — not any single clever trick —
+    is the entire source of the measured speedup.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Short-circuit <code>&&</code>/<code>||</code> correctly —
+        both sides are always evaluated (a real, flagged simplification)</li>
+        <li>Handle function calls without recursing through Python's
+        own call stack — a production VM manages its own explicit
+        frame stack</li>
+        <li>Get anywhere near a JIT compiler's real speedup — this
+        module stops at "compile to bytecode," not "further compile
+        hot bytecode to machine code" (real V8's TurboFan)</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Explain, with a real measured number, why bytecode
+        compilation is a genuine engineering response, not folklore</li>
+        <li>Compile control flow into explicit jump instructions with
+        computed addresses</li>
+        <li>Read and reason about a small, real instruction set and
+        its stack-machine execution model</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track2-applied-layer/phase8_js_engine/27_bytecode_vm
+python run_vm_demo.py</code></pre>
+
+  <div class="callout">
+    Your own speedup ratio WILL differ from 1.84x — it depends heavily
+    on this specific machine, Python version, and current system load.
+    What matters is that the VM number is consistently lower than the
+    interpreter number when run back-to-back on your own machine, not
+    matching this exact ratio.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      This module's speedup (roughly 1.84x) is real but modest — nowhere
+      near the difference between, say, interpreted Python and compiled
+      C. Given that both Module 26 and Module 27 are themselves written
+      in Python and run on the same Python interpreter, why would you
+      expect the GAP between "tree-walking" and "bytecode" to be much
+      LARGER in a real engine written in C++ (like V8) than what this
+      module measured? Think about what's actually being compared in
+      each case before revealing the answer.
+    </summary>
+    <div class="answer">
+      Because in THIS module, both approaches pay an enormous, shared,
+      FIXED overhead: every single operation — pushing to a stack,
+      checking an opcode, calling a Python function — already goes
+      through Python's own interpreter loop, its own object model, and
+      its own dynamic dispatch machinery. That shared cost dominates
+      both measurements roughly equally, which is exactly why the gap
+      between them is modest — we're comparing two strategies
+      implemented in the same relatively slow host environment. A real
+      engine written in C++ has no such shared floor: its tree-walking
+      version (if one existed) would pay real, uncushioned recursive
+      function-call and dynamic-type-check costs on bare metal, while
+      its bytecode version runs an extremely tight, often
+      hand-optimized dispatch loop with none of that overhead — which
+      is why the REAL difference between these two strategies, measured
+      in a real engine's native implementation language, is
+      dramatically larger than what this Python-on-Python comparison
+      shows. This module's result is honest and real for what it
+      measures; it deliberately doesn't claim to reproduce the absolute
+      magnitude a native implementation would show.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why isn't this module's speedup bigger?</dt>
+    <dd>Because both implementations are themselves interpreted Python
+    code — see the Brain Exercise above. The RELATIVE improvement (less
+    dispatch overhead, no repeated tree traversal) is real and would
+    hold in any implementation language; the ABSOLUTE size of that
+    improvement depends heavily on how much overhead the host language
+    itself already adds underneath both approaches.</dd>
+
+    <dt>Is "opcode" just a fancy word for "instruction"?</dt>
+    <dd>Essentially yes — "opcode" (operation code) specifically refers
+    to the part of an instruction that identifies WHICH operation to
+    perform (`LOAD_CONST`, `BINARY_OP`, etc.), as distinct from the
+    instruction's argument/operand (the actual constant value, which
+    operator). This module represents both together in one `Instr`
+    object for simplicity.</dd>
+
+    <dt>Why does `CALL` need to know the argument count (`argc`)
+    explicitly?</dt>
+    <dd>Because the VM's value stack is untyped and doesn't otherwise
+    know how many of the values currently on top of it belong to this
+    particular call's arguments versus something pushed earlier —
+    encoding the count directly in the instruction is what lets `CALL`
+    correctly pop exactly the right number of values, in the right
+    order (reversed, since they were pushed left-to-right but popped
+    last-in-first-out).</dd>
+
+    <dt>Does real V8 have exactly these instructions?</dt>
+    <dd>Not these exact names or this exact instruction set — V8's real
+    Ignition bytecode has dozens of specialized instructions tuned for
+    real JS semantics and performance. This module's instruction set is
+    a small, real, but deliberately minimal one covering exactly what
+    this course's JS subset (Module 25) needs.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You've built and measured two ways to RUN JavaScript. Module 28
+    turns to a different, equally fundamental question: how does JS
+    handle concurrency at all, given it's single-threaded? You'll build
+    a real event loop with task and microtask queues, and prove their
+    ordering guarantees experimentally.
+  </p>
+
+  <div class="module-footer">
+    <a href="../26_tree_walking_interpreter/tutorial.html">← Module 26: tree_walking_interpreter</a>
+    <a href="../28_event_loop_microtasks/tutorial.html">Module 28: event_loop_microtasks →</a>
+  </div>
+</div>
