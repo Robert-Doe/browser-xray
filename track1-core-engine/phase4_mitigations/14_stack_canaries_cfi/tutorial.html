@@ -1,0 +1,226 @@
+<title>Module 14: stack_canaries_cfi — Catch It Before It's Used</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#b83a3a;--accent-dim:#3a1414;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 1 · PHASE 4 · MODULE 14 · TRACK 1 FINALE</span>
+  <h1>stack_canaries_cfi</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: a stack canary catches control-flow hijacking at one
+    specific checkpoint — right before a corrupted return address gets
+    used — by building a real overflow bug and watching the same
+    corruption produce two very different outcomes.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../13_dep_nx_w_xor_x/tutorial.html">Module 13: dep_nx_w_xor_x</a>
+    <a class="tag-link" href="../../../prerequisites/04_processes_and_threads.html">stack basics (implicit in process anatomy)</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A postal sorting facility places a brightly colored, easily
+    disturbed tissue-paper seal across the opening of every high-value
+    package tray, right where the tray closes before shipping. Nobody's
+    watching every package get loaded — the seal doesn't stop anyone
+    from overstuffing a tray. But the instant before that tray ships
+    out the door, one worker glances at the seal. Torn seal? The tray
+    never leaves the building — whatever's happened to its contents, it
+    happened, but it goes no further. Intact seal? The tray ships,
+    trusted, no further questions asked. The seal doesn't prevent
+    tampering. It prevents tampered contents from ever leaving the
+    building undetected — checked at exactly one moment, right before
+    the point of no return.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li><code>vulnerable()</code> declares a 16-byte stack buffer and
+    copies its argument into it with <code>strcpy</code> — no bounds
+    check at all.</li>
+    <li>Compiled WITH a stack protector, the compiler places a random
+    "canary" value between the buffer and the saved return address, and
+    inserts a check of that value right before the function returns.</li>
+    <li>Given a short input, nothing overflows, the canary is untouched,
+    the check passes silently, the function returns normally.</li>
+    <li>Given a long input, <code>strcpy</code> overflows past
+    <code>buf</code>, overwriting the canary (and likely the return
+    address too) with attacker-supplied bytes.</li>
+    <li>At the return checkpoint, the canary check fails — the runtime
+    calls <code>__stack_chk_fail</code>, prints a warning, and
+    terminates the process immediately, <em>before</em> the corrupted
+    return address is ever used.</li>
+    <li>Compiled WITHOUT a stack protector, the identical overflow
+    happens — but there's no checkpoint. The function proceeds straight
+    to <code>return</code>, which uses the now-corrupted return address,
+    jumping to invalid memory and crashing there instead.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>=== overflow_protected.exe, SHORT input (no overflow) ===
+  exit code: 0 (0x00000000)
+
+=== overflow_protected.exe, LONG input (overflows into the canary) ===
+*** stack smashing detected ***: terminated
+  exit code: 3221226505 (0xC0000409) -> STATUS_STACK_BUFFER_OVERRUN
+
+=== overflow_unprotected.exe, LONG input (identical overflow, no canary) ===
+  exit code: 3221225477 (0xC0000005) -> STATUS_ACCESS_VIOLATION</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output — three runs of the identical source file's
+    same bug, differing only in a compiler flag and an input length.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>void vulnerable(const char *input) {
+    char buf[16];
+    strcpy(buf, input);  /* THE BUG: no bounds check whatsoever */
+    printf("  strcpy completed. buf now contains: %s\n", buf);
+}</code></pre>
+  <p>
+    Everything you need to understand the vulnerability is in that one
+    line — <code>strcpy</code> copies until it hits a null terminator in
+    <code>input</code>, with zero awareness of how big <code>buf</code>
+    actually is. Nothing about this function knows or checks the
+    length. The compiler flag (<code>-fstack-protector-all</code> vs.
+    <code>-fno-stack-protector</code>) is the ONLY thing that
+    differed between the protected and unprotected builds — the bug
+    itself is identical in both.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Achieve actual code execution from this overflow — this
+        module's payload is deliberately just repeated 'A' bytes,
+        crashing on an invalid address, never attacker-chosen code
+        (see <code>SAFETY_NOTES.md</code> — this is a firm, deliberate
+        scope boundary, not a missing feature)</li>
+        <li>Explain how CFI (Control Flow Integrity) generalizes this
+        idea beyond just the stack (briefly discussed below, not built)</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Build, compile, and trigger a real, textbook stack buffer
+        overflow, and explain exactly what it corrupts</li>
+        <li>Explain precisely what a stack canary does and does not
+        protect against, with two contrasting real crash codes as
+        evidence</li>
+        <li>Read <code>STATUS_STACK_BUFFER_OVERRUN</code> vs.
+        <code>STATUS_ACCESS_VIOLATION</code> and know which mitigation
+        (if any) was in play</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track1-core-engine/phase4_mitigations/14_stack_canaries_cfi
+python run_canary_demo.py</code></pre>
+
+  <div class="callout">
+    If the protected build's long-input run does NOT print "stack
+    smashing detected": confirm your gcc actually applied
+    <code>-fstack-protector-all</code> — some distributions/toolchains
+    default this differently. This course's verified toolchain is
+    MSYS2 mingw-w64 gcc 16.1.0 (installed specifically for this module
+    and Module 13); a different gcc build could, in principle, behave
+    differently.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      This module's overflow always corrupts the canary AND the return
+      address together, because they sit next to each other on the
+      stack. Could a DIFFERENT kind of bug corrupt a return address (or
+      a function pointer) WITHOUT ever touching a canary at all —
+      making the canary blind to it? Think about what the canary
+      actually checks, and when, before revealing the answer.
+    </summary>
+    <div class="answer">
+      Yes — and this is precisely the real, historical motivation for
+      Control Flow Integrity (CFI) mechanisms going beyond stack
+      canaries. A canary only detects corruption that happens to land
+      ON the canary's own stack position, checked only at one function's
+      return. A bug that corrupts a function pointer stored on the
+      HEAP (not the stack), or a vtable pointer in a C++ object, or a
+      return address reached via a completely different bug class (like
+      a format-string vulnerability that writes to an arbitrary
+      address, not a linear overflow that happens to spill past a local
+      buffer) — none of these necessarily touch any canary at all, and
+      a canary-only defense has nothing to say about them. This is
+      exactly why real hardened systems layer CFI mechanisms (which
+      validate that indirect calls/returns land on legitimate targets,
+      checked at the point of the jump itself, not via a separate
+      nearby value) on top of stack canaries — canaries and CFI catch
+      overlapping but genuinely different attack shapes. This course
+      does not build a working CFI mechanism (a real one requires
+      compiler and/or hardware support well beyond a toy demo), but
+      naming the gap precisely is itself real, useful knowledge.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why does the unprotected build crash at all, if there's no
+    canary to stop it?</dt>
+    <dd>Because the corrupted return address itself is garbage (built
+    from repeated <code>0x41</code> ['A'] bytes) — the CPU tries to jump
+    execution there when the function returns, and that address isn't
+    validly mapped in the process, producing an ordinary
+    access violation. A real attacker crafts the overflow bytes to land
+    on a specific, meaningful address instead of random 'A's — this
+    module deliberately never does that (see <code>SAFETY_NOTES.md</code>).</dd>
+
+    <dt>Is a stack canary the same thing as ASLR (Module 12)?</dt>
+    <dd>No, and they protect against different things in different
+    ways: ASLR makes addresses hard to predict in advance; a stack
+    canary detects that a linear overflow already happened, regardless
+    of whether any address was predictable. They're complementary,
+    independent layers — a real hardened build uses both simultaneously,
+    along with DEP (Module 13).</dd>
+
+    <dt>What does "*** stack smashing detected ***" actually check?</dt>
+    <dd>A random value the compiler placed on the stack when the
+    function was entered, compared against its expected value right
+    before the function returns. If they don't match, something wrote
+    past where it should have — the runtime has no way to know exactly
+    what was corrupted, only that the boundary was crossed, which is
+    why the only safe response is immediate termination rather than
+    trying to "fix" or continue.</dd>
+
+    <dt>Could the canary value itself be predicted or leaked, defeating
+    this protection the way Module 12 defeated ASLR?</dt>
+    <dd>In principle, yes — a separate information leak that reveals
+    the canary's actual value would let a sufficiently careful overflow
+    write the correct value back in place, passing the check despite
+    real corruption elsewhere. This is a real, known category of
+    canary-bypass technique in security research, following exactly the
+    same "one leak undoes a randomization-based protection" pattern
+    Module 12 demonstrated — a nice, concrete link between these two
+    Phase 4 modules.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    <strong>Track 1 (Core Engine) is complete.</strong> You've built,
+    from bare CPU behavior up through process isolation, sandboxing,
+    and memory-safety mitigations, the entire OS-level foundation a
+    browser's security model stands on. Track 2 begins now: Module 15
+    starts building the browser itself on top of everything you just
+    proved — starting with what actually happens, byte by byte, before
+    a single tag of HTML ever arrives.
+  </p>
+
+  <div class="module-footer">
+    <a href="../13_dep_nx_w_xor_x/tutorial.html">← Module 13: dep_nx_w_xor_x</a>
+    <a href="../../../track2-applied-layer/phase5_networking/15_dns_tcp_tls_handshake/tutorial.html">Module 15: dns_tcp_tls_handshake →</a>
+  </div>
+</div>
