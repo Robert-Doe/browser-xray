@@ -1,0 +1,219 @@
+<title>Module 21: css_parser_cssom — A Second, Separate Tree</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#b83a9f;--accent-dim:#3f1738;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 2 · PHASE 6 · MODULE 21 · PHASE FINALE</span>
+  <h1>css_parser_cssom</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: CSS becomes its own independent object model — parsed
+    completely separately from the DOM, with real, spec-defined error
+    recovery for malformed declarations and forward-compatible skipping
+    of unrecognized constructs.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../20_dom_tree_builder/tutorial.html">Module 20: dom_tree_builder</a>
+    <a class="tag-link" href="../19_html_tokenizer/tutorial.html">Module 19: html_tokenizer</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A building's structural blueprint (which rooms exist, how they
+    connect) and its interior design plan (paint colors, furniture
+    placement) are drawn by different people, on different documents,
+    using different notations — and crucially, the design plan can be
+    completely and correctly finished without either document ever
+    referencing the other by name during drafting. Only much later does
+    someone hold both documents side by side and say "this color goes
+    in that room." The CSSOM is the design plan: parsed to completion,
+    entirely on its own terms, with no awareness whatsoever of any
+    specific HTML document it might eventually be paired with.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>Comments are stripped in one pass, since they can appear almost
+    anywhere and never nest.</li>
+    <li>The parser reads characters up to the next <code>{</code>,
+    treating that as raw selector text — split on commas into a list.</li>
+    <li>Inside the braces, each declaration is read up to the next
+    <code>;</code> or <code>}</code> — but characters inside a quoted
+    string are never treated as that boundary, even if they're
+    literally a semicolon or brace.</li>
+    <li>Each declaration is split on its first <code>:</code> into a
+    property and a value; a trailing <code>!important</code> (with or
+    without a space) is detected and stripped off separately.</li>
+    <li>A declaration with no colon at all is discarded — and parsing
+    simply continues with whatever comes next.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>=== a string value containing ';', '{', '}' as literal text, not syntax ===
+input: 'p::before { content: "a;b{c}"; color: red; }'
+p::before {
+    content: "a;b{c}";
+    color: red;
+}
+
+=== a malformed declaration in the middle -- real CSS error recovery ===
+input: 'div { color: red; this is garbage; font-size: 12px; }'
+div {
+    color: red;
+    font-size: 12px;
+}
+(recovered from malformed declaration(s): ['this is garbage'])
+
+=== an @media block skipped as a balanced unit, without breaking later rules ===
+input: '@media (max-width: 600px) { p { color: green; } } div { color: red; }'
+div {
+    color: red;
+}</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output. Every genuinely tricky case — embedded
+    syntax characters in a string, a broken declaration, an entire
+    unparsed at-rule block — recovered exactly as real CSS specifies.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>if in_string:
+    buf.append(c)
+    if c == in_string:
+        in_string = None
+    self.pos += 1
+    continue
+if c in ('"', "'"):
+    in_string = c
+    ...</code></pre>
+  <p>
+    This is the one piece of state (<code>in_string</code>) that makes
+    the whole parser grammar-correct rather than a naive split. Without
+    it, <code>content: "a;b{c}";</code> would be sliced apart at the
+    semicolon and brace INSIDE the quotes — a real, easy mistake a
+    regex-based approach makes constantly.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Parse what a selector like <code>.card > p:first-child</code>
+        actually MEANS — selectors are captured as raw text here (Module
+        22 gives them meaning by matching against the DOM)</li>
+        <li>Parse what's INSIDE an <code>@media</code> block — it's
+        safely skipped, not understood</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Explain precisely why CSS never breaks on one bad
+        declaration, unlike many stricter formats</li>
+        <li>Parse real, tricky CSS correctly — quoted strings
+        containing syntax characters, `!important` variations, stray
+        comments</li>
+        <li>Explain what "forward-compatible parsing" means and why
+        CSS was deliberately designed around it</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track2-applied-layer/phase6_parsing_dom/21_css_parser_cssom
+python run_css_demo.py</code></pre>
+
+  <div class="callout">
+    If a rule's declarations look truncated or a value seems cut off
+    mid-string: check that every quote in your test CSS is properly
+    closed — an unterminated string will cause
+    <code>_read_until</code> to keep consuming characters (including
+    what you intended as later rules) until it finds a matching quote
+    or runs out of input entirely.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      This module deliberately skips `@media` blocks without parsing
+      their contents. What real, practical capability does a browser
+      lose if its CSS engine ONLY ever did this — skip every `@media`
+      block completely, forever? Think about what `@media` is actually
+      for before revealing the answer.
+    </summary>
+    <div class="answer">
+      Responsive design — an engine that always skips `@media` blocks
+      would render every page as if no responsive breakpoints existed
+      at all, always applying only the "base" styles regardless of
+      screen size, zoom level, print context, or any other media
+      condition. `@media` is exactly how a stylesheet says "these rules
+      only apply under these conditions" — skipping it entirely doesn't
+      break parsing (which is why safe-skipping is the right behavior
+      for THIS module's narrower goal), but a real browser has to go
+      much further: parse the media query condition itself, evaluate it
+      against the actual current viewport/device, and only THEN decide
+      whether to apply the rules inside. This module proves the
+      "don't break on what you don't understand yet" half of the story;
+      a real engine's `@media` support is the "and here's how we
+      actually understand it" half, deliberately left for you to
+      research further, since it's a substantial feature of its own.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why does CSS recover from errors so much more gracefully than,
+    say, JSON or a programming language?</dt>
+    <dd>Deliberate design choice by CSS's original authors, specifically
+    because stylesheets are meant to keep working across old and new
+    browsers, and across typos, without one small mistake taking down
+    an entire page's appearance. A JSON parser failing on one bad
+    comma is a reasonable design for a data-interchange format; a CSS
+    engine failing on one bad declaration would be a poor experience for
+    a presentation layer meant to degrade gracefully.</dd>
+
+    <dt>Is `!important` a hack, or a real, intentional CSS feature?</dt>
+    <dd>Completely real and intentional — it's part of how the CSS
+    cascade resolves conflicting rules, letting a specific declaration
+    override rules that would otherwise win based on specificity or
+    source order. Module 22 builds the cascade logic `!important`
+    actually plugs into.</dd>
+
+    <dt>Why split selectors on commas here, if we're not parsing them
+    fully yet?</dt>
+    <dd>Because "these declarations apply to ALL of these selectors" is
+    part of the CSSOM's actual structure, independent of what any one
+    selector string means — `h1, h2 { margin: 0; }` is genuinely one
+    rule with two selectors sharing declarations, not two separate
+    rules, and the CSSOM needs to preserve that grouping even before
+    Module 22 gives the selector text itself any meaning.</dd>
+
+    <dt>What would happen if a declaration's value itself contained an
+    unclosed string, like `content: "oops;`?</dt>
+    <dd>The parser would keep consuming everything after that point —
+    including what you intended as subsequent rules — looking for the
+    matching closing quote, since it correctly (per real CSS grammar)
+    treats everything inside an open string as literal text. This
+    matches real CSS behavior; an unterminated string is a genuinely
+    serious error in real stylesheets too, not just in this module's
+    implementation.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    <strong>Phase 6 (Parsing &amp; the DOM) is complete.</strong> You now
+    have two real, independently-built trees — a DOM and a CSSOM — that
+    have never once spoken to each other. Module 22 makes them meet:
+    computing, for every single DOM node, one final, resolved style by
+    applying the cascade — the first step of the actual rendering
+    pipeline.
+  </p>
+
+  <div class="module-footer">
+    <a href="../20_dom_tree_builder/tutorial.html">← Module 20: dom_tree_builder</a>
+    <a href="../../phase7_rendering/22_style_computation/tutorial.html">Module 22: style_computation →</a>
+  </div>
+</div>
