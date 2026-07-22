@@ -1,0 +1,214 @@
+<title>Module 11: site_isolation_model — Separation Isn't the Same as Safety</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#e0642c;--accent-dim:#4a2010;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 1 · PHASE 3 · MODULE 11 · PHASE CAPSTONE</span>
+  <h1>site_isolation_model</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves the precise, easy-to-oversimplify claim Site Isolation
+    actually depends on: process separation alone does NOT stop a
+    deliberate cross-process memory read — only process separation
+    <em>combined with</em> a real trust difference does.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../../phase2_process_ipc/05_process_creation/tutorial.html">Module 5: process_creation</a>
+    <a class="tag-link" href="../09_least_privilege_tokens/tutorial.html">Module 9: least_privilege_tokens</a>
+    <a class="tag-link" href="../../../prerequisites/08_origins_and_urls.html#origin-tuple">the origin tuple</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    Two hotel rooms, different keys, different doors — clearly
+    separated. But if the same locksmith who cut your key can also cut
+    a copy for the room next door, "different rooms" was never actually
+    keeping anyone out on its own. Real security came from the
+    locksmith refusing to cut that second key for someone with lower
+    standing — not from the rooms simply being different rooms. Module
+    5 proved the rooms are different. This module asks the sharper
+    question: is that alone enough to keep one guest out of another's
+    room? The honest answer, demonstrated directly, is no — you also
+    need the locksmith (the OS's access control) to actually refuse.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>A "victim" process (standing in for origin B's renderer) pins a
+    known address and writes a secret into it.</li>
+    <li><strong>Part A</strong>: an unrestricted "attacker" process
+    (origin A's renderer, no sandboxing applied) calls
+    <code>OpenProcess</code> on the victim's PID, then
+    <code>ReadProcessMemory</code> on the known address.</li>
+    <li>It succeeds — the OS had no reason to refuse a same-user,
+    same-privilege request.</li>
+    <li><strong>Part B</strong>: the identical attack, except the
+    attacker now runs under a Module-9-style LOW-integrity token, while
+    the victim stays at the OS default (Medium).</li>
+    <li><code>OpenProcess</code> itself is refused — Windows' Mandatory
+    Integrity Control enforces "no read up" specifically for process
+    and thread objects.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>=== Part A: unrestricted, same-integrity cross-process read ===
+[victim: origin B renderer] PID 23712 holding a secret at 0x300000000000
+[attacker: origin A renderer] OpenProcess(PID 23712) -> handle=192, GetLastError=0
+[attacker] ReadProcessMemory SUCCEEDED: b'ORIGIN_B_SESSION_TOKEN_SECRET\x00...'
+
+=== Part B: attacker forced to LOW integrity, victim stays Medium ===
+[victim: origin B renderer] PID 32988 holding a secret at 0x300000000000
+[attacker: origin A renderer] OpenProcess(PID 32988) -> handle=0, GetLastError=5
+[attacker] cannot proceed -- no handle means no ReadProcessMemory is possible.</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output. Same secret, same known address, same attack
+    code — the only variable that changed the outcome was whether a
+    genuine trust difference existed between the two processes.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>handle = kernel32.OpenProcess(
+    PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, False, target_pid
+)
+...
+ok = kernel32.ReadProcessMemory(handle, ctypes.c_void_p(PINNED_ADDRESS), buffer, 64, ...)</code></pre>
+  <p>
+    Every line here is an ordinary, fully documented Win32 call — the
+    same two functions a legitimate debugger uses. Nothing about them
+    is inherently an "exploit." What determines whether this succeeds
+    is entirely the kernel's own access-control decision at the moment
+    of <code>OpenProcess</code> — which is exactly why Part A and Part B
+    differ only in that one line's return value.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Claim this module reproduces real Chromium's FULL renderer
+        isolation — real Chromium layers restricted tokens, Job
+        Objects, and (on modern Windows) AppContainer SIDs together;
+        this module isolates and proves just the integrity-level piece</li>
+        <li>Explain a read that succeeds <em>despite</em> matching
+        integrity levels, via a side channel instead of a direct API
+        call (Module 34)</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>State precisely, with captured evidence, what Site
+        Isolation's guarantee actually depends on</li>
+        <li>Correct the common oversimplification "different processes
+        = automatically can't read each other"</li>
+        <li>Explain why real Chromium didn't stop at "put origins in
+        different processes" and kept adding sandboxing layers on top</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track1-core-engine/phase3_sandboxing/11_site_isolation_model
+python run_site_isolation_demo.py</code></pre>
+
+  <div class="callout">
+    If Part A UNEXPECTEDLY fails (access denied even without any
+    integrity restriction): check whether your account is running under
+    a non-default security policy (some hardened enterprise/EDR
+    configurations restrict cross-process handle grants even between
+    same-user processes by policy). That would actually be a stronger
+    security posture than the OS default this module demonstrates —
+    worth noting, not a broken demo.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      Real Chromium didn't ship Site Isolation as a day-one feature —
+      it was added years after the original multi-process architecture
+      (Module 8's shape), and specifically strengthened again after
+      Spectre (2018). Given what this module just proved, why would
+      "put origins in different processes" alone have felt sufficient
+      for years, before someone needed to add more? Think about what
+      threat model changed, before revealing the answer.
+    </summary>
+    <div class="answer">
+      Because for a long time, the primary threat multi-process
+      architecture defended against was a <em>crashed or buggy</em>
+      renderer taking down the whole browser or corrupting unrelated
+      tabs' in-process memory — a reliability and blast-radius problem,
+      which plain process separation (Module 5) genuinely solves
+      completely, no integrity levels needed. What this module
+      demonstrates is a <em>different</em> threat model: a
+      <em>maliciously compromised</em> renderer deliberately trying to
+      read another origin's data using legitimate OS APIs. That threat
+      only becomes the priority once you assume an attacker has already
+      achieved code execution inside one renderer (e.g. via a real
+      browser engine bug) and start asking "now what can they reach?" —
+      which is precisely the shift in thinking Spectre forced across the
+      entire industry: not just "can a bug in my code leak my own data"
+      but "can an attacker who already has code execution somewhere
+      reach data they were never supposed to see." This module's Part A
+      is a concrete instance of exactly that second, harder question.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Doesn't Part A basically mean process isolation is worthless?</dt>
+    <dd>No — Module 5's guarantee (no *accidental* cross-talk, no
+    address-collision risk) is still completely real and still matters
+    enormously. This module adds a second, separate claim on top:
+    process separation doesn't automatically stop a *deliberate*,
+    privileged attempt. Both things are true at once; conflating them is
+    the exact mistake this module exists to prevent.</dd>
+
+    <dt>Why does Windows treat process/thread objects specially for
+    "no read up," when Module 9 showed ordinary files allow read-up by
+    default?</dt>
+    <dd>Because the potential harm is different in kind. A file's
+    contents are whatever the file happens to contain — often
+    intentionally shareable. A process's live memory can contain
+    anything currently being computed: passwords mid-entry, decrypted
+    data, cryptographic keys. Microsoft's default policy reflects that
+    higher sensitivity specifically for process/thread objects, even
+    though it left the more general "any object" default more
+    permissive.</dd>
+
+    <dt>Would Part B still succeed if the victim were also Low integrity
+    (not Medium)?</dt>
+    <dd>Yes — MIC's "no read up" only blocks reads where the target is
+    at a <em>higher</em> integrity than the reader; two processes at the
+    <em>same</em> integrity level don't trigger it. This is precisely
+    why real sandboxes don't rely on integrity level alone to separate
+    same-privileged components from each other — they add restricted
+    tokens, distinct AppContainer SIDs, or Job Object restrictions on
+    top, exactly as flagged in this module's Limits section.</dd>
+
+    <dt>Is this technique ever legitimate outside of attacks?</dt>
+    <dd>Constantly — debuggers, profilers, and diagnostic tools all use
+    exactly <code>OpenProcess</code>/<code>ReadProcessMemory</code>
+    legitimately. The API itself is neutral; what matters is the access
+    control decision governing when it's allowed to succeed, which is
+    this module's entire subject.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    Phase 3 (Isolation &amp; Sandboxing) is complete — you've built
+    resource-specific restriction, category-wide restriction, and now
+    the precise, combined claim Site Isolation actually rests on. Phase
+    4 turns to memory-safety mitigations: Module 12 proves ASLR's real,
+    limited guarantee — and exactly how a single information leak
+    collapses it.
+  </p>
+
+  <div class="module-footer">
+    <a href="../10_syscall_filtering/tutorial.html">← Module 10: syscall_filtering</a>
+    <a href="../../phase4_mitigations/12_aslr_and_leaks/tutorial.html">Module 12: aslr_and_leaks →</a>
+  </div>
+</div>
