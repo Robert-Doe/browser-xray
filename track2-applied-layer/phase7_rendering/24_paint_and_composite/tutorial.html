@@ -1,0 +1,209 @@
+<title>Module 24: paint_and_composite — Why Some CSS Is Nearly Free</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#c76a2f;--accent-dim:#472414;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 2 · PHASE 7 · MODULE 24 · PHASE FINALE</span>
+  <h1>paint_and_composite</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: paint and composite are genuinely separate pipeline stages
+    — instrumented with real call counters showing that a
+    compositor-only property change skips layout and paint entirely,
+    while a layout-affecting change cannot.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../23_layout_box_model/tutorial.html">Module 23: layout_box_model</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A theater has painted backdrops, already finished and hanging, and
+    a movable rig that slides those backdrops left and right during a
+    scene change. Repainting a backdrop is real, slow, skilled work.
+    Sliding an already-painted backdrop three feet to the left is
+    nearly instant — a stagehand just pulls a rope. If a director asks
+    for the CONTENT of a backdrop to change, there's no shortcut: it has
+    to be repainted. But if the director only wants it to be in a
+    slightly different spot, repainting it from scratch would be a
+    bizarre waste of a skilled painter's time when the rig was built
+    for exactly that job.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>Layout (Module 23) produces real box geometry.</li>
+    <li><strong>Paint</strong> reads each box's visual style and
+    records what color goes where, in that box's OWN local coordinates
+    — a flat list of paint records, back-to-front.</li>
+    <li><strong>Composite</strong> walks the box tree once more,
+    grouping paint records into layers — most share one base layer, but
+    any element with <code>transform</code> (or
+    <code>will-change: transform</code>) gets its OWN dedicated layer.</li>
+    <li>Changing a layout property (like <code>width</code>) invalidates
+    everything downstream: layout, then paint, then composite all have
+    to run again.</li>
+    <li>Changing <code>transform</code> on an element that ALREADY has
+    its own layer only requires nudging that layer's offset — paint and
+    layout are never touched.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>=== Initial render ===
+stage run counts: {'style': 1, 'layout': 1, 'paint': 1, 'composite': 1}
+
+=== Change #box's WIDTH (a layout-affecting property) ===
+stage run counts: {'style': 1, 'layout': 2, 'paint': 2, 'composite': 2}
+  -> layout, paint, AND composite all ran again
+
+=== Change #mover's TRANSFORM (a compositor-only property) ===
+stage run counts: {'style': 1, 'layout': 2, 'paint': 2, 'composite': 3}
+  -> ONLY composite ran again -- layout and paint counts are unchanged</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured counters. Layout and paint are frozen at 2 through
+    the final update — only composite advances.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>def change_compositor_only_property(self, element, dx, dy):
+    for layer in self.layers:
+        if any(r.box.element is element for r in layer.paint_records):
+            layer.offset_x += dx
+            layer.offset_y += dy
+            self.composite_runs += 1
+            return</code></pre>
+  <p>
+    Notice what this function never calls: <code>_run_layout()</code>
+    or <code>_run_paint()</code>. It doesn't skip them by an
+    optimization check — it structurally has no path that reaches
+    them. That's the real architectural point: a dedicated layer's
+    offset genuinely doesn't depend on anything layout or paint would
+    recompute.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Actually rasterize a real bitmap — "paint" here means a
+        structured record, not real pixels on a real GPU surface</li>
+        <li>Model every real layer-promotion trigger (opacity
+        animation, `<video>`, 3D transforms) — only `transform` is
+        implemented</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Explain, with a working, instrumented model, exactly why
+        "animate transform/opacity, not width/top/left" is real
+        performance advice, not folklore</li>
+        <li>Explain the practical difference between paint and
+        composite in your own words, with a concrete example of each</li>
+        <li>Predict, for a given CSS property change, which pipeline
+        stages must re-run</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track2-applied-layer/phase7_rendering/24_paint_and_composite
+python run_pipeline_demo.py</code></pre>
+
+  <div class="callout">
+    If <code>change_compositor_only_property</code> raises
+    <code>ValueError: element has no dedicated layer</code>: the
+    target element needs <code>transform</code> (or
+    <code>will-change: transform</code>) in its CSS from the very
+    start — a layer is only created for it during the INITIAL
+    composite pass; you can't promote an element to its own layer
+    after the fact without re-running composite once with that
+    property already present.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      Suppose a developer, wanting a "smooth" hover effect, animates an
+      element's `top` and `left` CSS properties every frame instead of
+      `transform: translate(...)`. Using this module's exact model,
+      trace through what happens on EVERY SINGLE FRAME of that
+      animation, and explain why this is a well-known, real performance
+      complaint, before revealing the answer.
+    </summary>
+    <div class="answer">
+      `top`/`left` are layout-affecting properties in this module's
+      model (and in real browsers) — changing them moves where an
+      element sits, which is exactly the kind of change `change_layout_affecting_property()`
+      demonstrates. That means EVERY SINGLE FRAME of such an animation
+      forces a full layout pass (recomputing geometry for that element
+      and potentially everything affected by it), a full paint pass,
+      and only then a composite pass — at whatever frame rate the
+      animation runs (ideally 60 times per second). Compare that to a
+      `transform`-based animation using this exact same model: every
+      frame touches ONLY composite, which is dramatically cheaper work,
+      repeated 60 times a second. This is precisely why real browser
+      performance tooling (like Chrome DevTools' "Performance" panel)
+      explicitly flags animations that trigger layout ("layout
+      thrashing") as a common, real, fixable performance problem — and
+      why "use transform, not top/left, for animations" is standard,
+      well-founded advice rather than a superstition.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why doesn't EVERY element just get its own compositor layer,
+    if layers are so much cheaper to update?</dt>
+    <dd>Because each layer has a real memory and management cost —
+    giving every element its own layer would multiply GPU memory usage
+    and layer-management overhead enormously, for elements that never
+    actually need independent movement. Real browsers are deliberately
+    selective about layer promotion for exactly this reason — it's a
+    genuine tradeoff, not a free win to apply everywhere.</dd>
+
+    <dt>Is `background-color` ever a compositor-only property?</dt>
+    <dd>No — changing what color is painted is fundamentally a PAINT
+    concern (the pixels themselves changed), never something composite
+    alone could handle. This module's own `needs_own_layer()` check
+    deliberately never looks at `background-color` for exactly this
+    reason.</dd>
+
+    <dt>What would happen if `#mover` in the demo had never had
+    `transform` set at all?</dt>
+    <dd>It would remain part of the shared base layer, and
+    `change_compositor_only_property()` would find no dedicated layer
+    for it and raise an error — matching real behavior: an element must
+    already be "promoted" to its own layer (by having a triggering
+    property present) before a transform-only update can skip layout
+    and paint for it.</dd>
+
+    <dt>Does "paint" in this module correspond to anything real
+    graphics hardware does?</dt>
+    <dd>Conceptually yes — real paint produces actual bitmap tiles via
+    a rasterizer (e.g. Skia in Chromium), and real composite hands
+    those already-rasterized tiles to the GPU to be positioned and
+    blended. This module's `PaintRecord`/`Layer` objects are a
+    structural stand-in for that real process, not a literal
+    reimplementation of a rasterizer or GPU compositor.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    <strong>Phase 7 (Rendering) is complete.</strong> You've built every
+    stage from raw HTML/CSS text to a real, instrumented pixel pipeline.
+    Phase 8 turns to the other half of what makes a page interactive:
+    Module 25 starts building a real JavaScript engine, beginning
+    exactly where the HTML tokenizer began — a lexer and parser turning
+    JS source into an AST.
+  </p>
+
+  <div class="module-footer">
+    <a href="../23_layout_box_model/tutorial.html">← Module 23: layout_box_model</a>
+    <a href="../../phase8_js_engine/25_js_lexer_parser/tutorial.html">Module 25: js_lexer_parser →</a>
+  </div>
+</div>
