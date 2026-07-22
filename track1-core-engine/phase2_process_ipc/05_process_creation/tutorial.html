@@ -1,0 +1,210 @@
+<title>Module 5: process_creation — Same Address, Different Universe</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#5fbf7a;--accent-dim:#1f3a2a;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 1 · PHASE 2 · MODULE 05</span>
+  <h1>process_creation</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: spawning a child process creates a genuinely separate
+    address space — by forcing a parent and a freshly spawned child to
+    both claim the identical numeric virtual address, and watching them
+    never once collide.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../../../prerequisites/01_virtual_memory.html#address-space">virtual address space</a>
+    <a class="tag-link" href="../../../prerequisites/04_processes_and_threads.html#process-definition">why processes exist as a split from threads</a>
+    <a class="tag-link" href="../../../track1-core-engine/phase1_bare_metal/01_mem_addressing/tutorial.html">Module 1: mem_addressing</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    Two identical safety deposit boxes, both labeled "Box 7," sit in two
+    completely different bank branches across town. You put cash in
+    "Box 7" at Branch A. Someone else puts a different envelope in
+    "Box 7" at Branch B. The label matching doesn't create any
+    connection between the boxes — they were never the same box, just
+    two boxes that happen to share a number, in two buildings that have
+    nothing to do with each other. You could open your Branch A box a
+    year later and your cash is exactly as you left it, utterly
+    unaffected by whatever happened at Branch B's "Box 7" in the
+    meantime.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>The parent process calls <code>VirtualAlloc</code> with a
+    specific, non-NULL address — asking Windows for <em>that exact</em>
+    virtual address, not "any free address."</li>
+    <li>It writes a known string into that memory.</li>
+    <li>It spawns a child process via <code>subprocess.run</code> (which
+    ultimately calls Windows' <code>CreateProcess</code>) — a genuinely
+    new process, with the OS building it a fresh, empty address space
+    from scratch.</li>
+    <li>The child asks for the <em>identical</em> numeric address the
+    parent used. Windows grants it — because in the child's own,
+    separate address space, that address was never taken.</li>
+    <li>Before writing anything, the child reads what's at that address
+    — and finds all zero bytes, not the parent's string, because freshly
+    committed memory is documented to start zeroed.</li>
+    <li>The child writes its own, different string, then exits.</li>
+    <li>The parent — still running the whole time — reads its own copy
+    at that same address one more time.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>[parent] claimed virtual address 0x200000000000
+[parent] wrote: b'PARENT_WROTE_THIS_VALUE_1234\x00'
+
+[child] claimed the SAME virtual address as the parent: 0x200000000000
+[child] bytes found at that address BEFORE writing anything: b'\x00\x00\x00...\x00'
+[child] bytes at that address AFTER this process wrote to it: b'CHILD_WROTE_THIS_VALUE_5678\x00'
+
+[parent] re-reading MY OWN copy at 0x200000000000 after the child ran and wrote to 'the same' address:
+[parent] bytes found: b'PARENT_WROTE_THIS_VALUE_1234\x00'
+[parent] unchanged from what I originally wrote? True</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output. Identical address number, three completely
+    independent observations of it.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>got = kernel32.VirtualAlloc(
+    ctypes.c_void_p(PINNED_ADDRESS), PINNED_SIZE,
+    MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE
+)
+if got != PINNED_ADDRESS:
+    raise RuntimeError("OS granted a different address than requested")</code></pre>
+  <p>
+    The whole experiment depends on this one behavior:
+    <code>VirtualAlloc</code> with a non-NULL address either gives you
+    <em>exactly</em> that address or fails outright — it never silently
+    substitutes a nearby free one. That's what lets us force two
+    unrelated processes onto the same number on purpose, instead of
+    hoping for a coincidence.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Deliberately let two processes <em>share</em> memory (that's
+        Module 7 — the explicit, opt-in exception to everything this
+        module just proved)</li>
+        <li>Explain how a Browser Process and Renderer Process actually
+        talk to each other, given they can't share memory by default
+        (Module 6 — pipes and sockets)</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>State, with a run-and-observed experiment (not just a
+        diagram), that process creation produces real isolation</li>
+        <li>Explain why a compromised process can't simply "guess an
+        address" to read another process's secrets</li>
+        <li>Recognize freshly committed memory's zero-initialization as
+        a real, checkable OS guarantee</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track1-core-engine/phase2_process_ipc/05_process_creation
+python parent_writes.py</code></pre>
+  <p>(This single command spawns the child script itself — you don't run
+  <code>child_writes_same_address.py</code> separately.)</p>
+
+  <div class="callout">
+    If <code>claim_pinned_address()</code> raises "OS granted a
+    different address than requested": something else on your system
+    (an unusual security tool, a non-default ASLR configuration, or a
+    prior crashed process still holding a mapping) has claimed the
+    32 TB test address. Try a different value from
+    <code>mem_pin.PINNED_ADDRESS</code> — several candidates were
+    verified in <code>DECISIONS.md</code>.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      Suppose, instead of <code>subprocess.run</code>, the parent had
+      started the child using Python's <code>threading</code> module
+      instead — running the "child" logic as a new thread in the same
+      process. Would this experiment still show isolation? Think it
+      through before revealing the answer.
+    </summary>
+    <div class="answer">
+      No — and that's exactly the point of the process/thread
+      distinction from Prerequisite 4. A thread shares its parent's
+      address space completely. If the "child" were a thread instead of
+      a process, both the "parent" and "child" logic would be reading
+      and writing the <em>same</em> physical memory at that address —
+      the second write would simply overwrite the first, and the
+      "parent" would see the thread's string when it re-read the
+      address. The entire experiment only demonstrates isolation
+      because a process boundary, not a thread boundary, sits between
+      the two writers. This is precisely why the multi-process browser
+      architecture (Modules 8 and 11) chooses processes, not threads,
+      as its isolation unit — threads wouldn't provide this guarantee
+      at all.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why does the address have to be so large (32 TB)?</dt>
+    <dd>It doesn't <em>have</em> to be — any address free in both
+    processes would work. A large, unusual value was chosen because
+    it's reliably far from anything a normal process's loader, heap, or
+    stack would ever use, making the exact-address request succeed
+    consistently rather than occasionally failing due to ASLR placing
+    something else there.</dd>
+
+    <dt>Doesn't this contradict ASLR (Module 1), which randomizes
+    addresses?</dt>
+    <dd>No — <code>VirtualAlloc</code> with an explicit address is a
+    deliberate override of the "let the OS pick" default that ASLR
+    governs. ASLR randomizes addresses the OS chooses on your behalf
+    (like where the heap or a DLL loads); it doesn't prevent your own
+    code from explicitly requesting a specific address, if that address
+    happens to be free.</dd>
+
+    <dt>What would it actually look like if isolation were broken?</dt>
+    <dd>The parent's final read would show
+    <code>b'CHILD_WROTE_THIS_VALUE_5678\x00'</code> instead of its own
+    string — meaning the child's write reached the parent's physical
+    memory. That's precisely the failure condition
+    <code>parent_writes.py</code> checks for and would raise an error
+    on, and it's precisely the property real vulnerabilities like
+    certain virtualization/hypervisor escape bugs have historically
+    broken, at a different layer than plain OS process isolation.</dd>
+
+    <dt>Is this the same mechanism Site Isolation (Module 11) relies on?</dt>
+    <dd>Yes, at its foundation — Site Isolation's core guarantee ("a
+    compromised renderer for origin A can't read origin B's data") is
+    built on exactly this OS-level process isolation property, applied
+    deliberately: putting different origins in different OS processes.
+    Module 11 adds the origin-to-process assignment policy on top of
+    the isolation this module already proved.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You've proven processes can't reach each other by accident. Module
+    6 proves the flip side: how two processes can talk to each other
+    <em>on purpose</em> — building the first real pipe between two
+    processes, the seed of every Browser-Process-to-Renderer-Process
+    connection this course builds from here on.
+  </p>
+
+  <div class="module-footer">
+    <a href="../../phase1_bare_metal/04_process_anatomy/tutorial.html">← Module 04: process_anatomy</a>
+    <a href="../06_pipes_and_sockets/tutorial.html">Module 06: pipes_and_sockets →</a>
+  </div>
+</div>
