@@ -1,0 +1,205 @@
+<title>Module 17: origin_model_sop — The Request Still Happens</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#7a5fd6;--accent-dim:#2a2050;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 2 · PHASE 5 · MODULE 17 · THE MOST CONSEQUENTIAL RULE ON THE WEB</span>
+  <h1>origin_model_sop</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: the browser — not the server, not the network — is what
+    stops a script from origin A reading a response from origin B, and
+    proves it by showing the network request happens identically in
+    both the blocked and unblocked case.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../../../prerequisites/08_origins_and_urls.html#origin-tuple">the origin tuple</a>
+    <a class="tag-link" href="../16_http_parsing/tutorial.html">Module 16: http_parsing</a>
+    <a class="tag-link" href="../../../track1-core-engine/phase2_process_ipc/08_toy_browser_shell/tutorial.html">Module 8: toy_browser_shell</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A courier genuinely delivers a sealed envelope to your desk — the
+    delivery itself always happens, the courier's job is done, full
+    stop. What happens next is entirely a decision made at YOUR desk:
+    your office's own policy might say "don't open envelopes addressed
+    to a different department," and if this envelope wasn't addressed
+    to you, your office assistant intercepts it and refuses to let you
+    read the contents — even though it's sitting right there, already
+    delivered, already in the building. The courier company never knew
+    or cared about any of this. The refusal was never about delivery.
+    It was always about who's allowed to open what, decided entirely on
+    your side of the transaction.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>Two toy origins run locally — different ports, so genuinely
+    different origins by the strict definition (Prerequisite 8).</li>
+    <li><code>naive_fetch()</code> sends a real request to origin B and
+    returns whatever comes back, with no awareness that "origin" is
+    even a concept.</li>
+    <li><code>sop_enforced_fetch()</code> sends the <em>exact same</em>
+    real request — the bytes leave the machine, origin B's server
+    responds, exactly as before.</li>
+    <li>Only after that real response is fully received does the
+    wrapper check: does the requesting page's origin match the
+    response's origin?</li>
+    <li>If not, the response is real, complete, sitting in memory — and
+    deliberately withheld from the caller.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>=== Part A: naive_fetch -- NO origin check at all ===
+  script on origin A read origin B's response directly: b'PRIVATE_SESSION_DATA_FOR_ORIGIN_B_ONLY'
+
+=== Part B: sop_enforced_fetch -- cross-origin, from origin A to origin B ===
+  BLOCKED, as expected: script running on http://127.0.0.1:51960 may not read
+  a response from http://127.0.0.1:51961 -- request WAS sent and a real
+  response WAS received over the network; the browser is withholding it
+  from script, not preventing the request itself
+
+=== Part C: sop_enforced_fetch -- SAME origin (A fetching from A) ===
+  ALLOWED, as expected: b'public content from origin A'</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output. Same network layer, same servers — the only
+    thing that changed between Part A and Part B was whether anything
+    checked the origin before handing back the response.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>raw = _raw_get(target_url)  # the network request happens regardless
+response = parse_response(raw)
+
+if not same_origin(requesting_origin, target_origin):
+    raise BlockedBySameOriginPolicy(...)
+
+return response.body</code></pre>
+  <p>
+    Read the order of operations literally: the request is sent and
+    the response is fully parsed <em>before</em> the origin check even
+    runs. This isn't an accident of this toy implementation — it
+    mirrors something genuinely true about real browsers: the network
+    layer doesn't know or care about JavaScript's Same-Origin Policy.
+    The policy is entirely about what the browser lets script code
+    <em>read afterward</em>.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Explain how a server can deliberately RELAX this default
+        for legitimate cross-origin use (Module 18 — CORS)</li>
+        <li>Explain why this exact "request still happens" fact is
+        precisely what makes CSRF possible (Module 32)</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>State precisely, with working code, where SOP enforcement
+        actually lives (client-side, response-side)</li>
+        <li>Correct the common misconception that SOP prevents
+        cross-origin requests from being sent at all</li>
+        <li>Implement a correct, precise same-origin comparison from
+        first principles</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track2-applied-layer/phase5_networking/17_origin_model_sop
+python run_sop_demo.py</code></pre>
+
+  <div class="callout">
+    If Part A or C hang: the toy servers run as background daemon
+    threads inside the same process; give the 0.3-second startup delay
+    in <code>run_sop_demo.py</code> a moment, or increase it slightly if
+    your machine is under heavy load.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      Given that the request in Part B genuinely reached origin B's
+      server and origin B genuinely processed it and sent back a real
+      response — could origin B's server have been affected by that
+      request (e.g. if it were a request that changed data, not just
+      read it), even though the BROWSER blocked reading the response?
+      Think it through before revealing the answer.
+    </summary>
+    <div class="answer">
+      Yes — and this is exactly the gap that makes CSRF (Cross-Site
+      Request Forgery) possible, which Module 32 demonstrates directly.
+      SOP blocks a malicious page from <em>reading the response</em> of
+      a cross-origin request. It does nothing to stop the request from
+      being <em>sent</em>, and it does nothing to stop that request from
+      having a real, permanent side effect on the server if the server
+      itself doesn't separately verify the request's legitimacy (e.g.
+      via a CSRF token). A malicious page can, for instance, cause your
+      browser to send a real, cookie-authenticated "transfer money" or
+      "change my email" request to a site you're logged into — SOP
+      never promised to stop the request, only to stop the malicious
+      page from reading what came back. This is precisely why
+      "same-origin policy" and "protects you from all cross-origin
+      attacks" are NOT the same claim, and conflating them is a common,
+      consequential mistake.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>If SOP doesn't stop the request, what's the point of it?</dt>
+    <dd>It stops the single most dangerous consequence of a cross-origin
+    request for a passive attacker: reading back sensitive data (your
+    bank balance, your private messages, an API token) that a
+    cookie-authenticated request to another site would return. That's
+    an enormous, genuinely load-bearing protection — it's just not the
+    same claim as "stops the request from happening," which is a
+    separate concern (Module 32's territory).</dd>
+
+    <dt>Does <code>127.0.0.1:51960</code> and <code>127.0.0.1:51961</code>
+    really count as "different origins" the way two real websites would?</dt>
+    <dd>Yes — by the strict origin definition (Prerequisite 8), port is
+    a full, equal member of the comparison. Two services on the same
+    machine, same IP, different ports are exactly as "different-origin"
+    to a browser as two completely unrelated domains would be.</dd>
+
+    <dt>Would a real browser's <code>fetch()</code> behave exactly like
+    this module's <code>sop_enforced_fetch()</code>?</dt>
+    <dd>Conceptually yes for the core behavior demonstrated here (block
+    reading a cross-origin response by default) — though real browsers
+    layer additional nuance on top (some cross-origin responses are
+    partially readable in limited "opaque" forms, and CORS headers can
+    change the outcome entirely, which Module 18 covers). This module
+    isolates the DEFAULT, no-CORS behavior specifically.</dd>
+
+    <dt>Why compare origins as a plain 3-tuple instead of, say, a
+    formatted string comparison?</dt>
+    <dd>A tuple comparison makes every part of the check explicit and
+    equally weighted in one visible line — a string-based comparison
+    risks subtle bugs (e.g. accidentally normalizing case differently
+    per field, or a formatting difference that makes two equal origins
+    compare unequal as strings). Precision here matters enormously,
+    since this exact check is the entire security boundary.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You've proven the default. Module 18 proves the deliberate,
+    explicit way a server can relax it — CORS — and shows the real
+    extra round trip (the preflight request) that makes that relaxation
+    safe rather than a silent bypass.
+  </p>
+
+  <div class="module-footer">
+    <a href="../16_http_parsing/tutorial.html">← Module 16: http_parsing</a>
+    <a href="../18_cors_preflight/tutorial.html">Module 18: cors_preflight →</a>
+  </div>
+</div>
