@@ -1,0 +1,212 @@
+<title>Module 18: cors_preflight — Ask First, Because the Request Isn't Free</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#6a4fc7;--accent-dim:#241d47;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 2 · PHASE 5 · MODULE 18 · PHASE FINALE</span>
+  <h1>cors_preflight</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: CORS is a server-controlled, per-origin, opt-in relaxation
+    of the Same-Origin Policy default — enacted through a real extra
+    round trip specifically so the browser can ask permission before a
+    risky request, not just check permission after.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../17_origin_model_sop/tutorial.html">Module 17: origin_model_sop</a>
+    <a class="tag-link" href="../16_http_parsing/tutorial.html">Module 16: http_parsing</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    Module 17's courier always delivers, no matter what. CORS adds a
+    phone call BEFORE certain deliveries — specifically the kind that
+    could change something at the destination (a signed-for package,
+    not a simple flyer). "Hello, this is a courier calling on behalf of
+    Building A. Are you expecting a delivery from Building A, and are
+    you willing to accept a package matching this description?" Only
+    if the answer is a clear, specific "yes, from Building A,
+    specifically that kind of package" does the courier actually
+    complete the real delivery. The phone call isn't paranoia for its
+    own sake — it exists specifically because some deliveries do things
+    you can't cleanly undo once they've arrived.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>A cross-origin, non-simple request (a <code>PUT</code> with a
+    custom header) is about to be made.</li>
+    <li>Before sending it for real, the browser sends an
+    <code>OPTIONS</code> preflight, declaring the method and headers it
+    intends to use, and its own origin.</li>
+    <li>The server checks its own policy and responds — with
+    <code>Access-Control-Allow-*</code> headers if it grants permission,
+    or without them if it doesn't.</li>
+    <li>Only if the preflight response explicitly grants this exact
+    origin and method does the browser send the real request.</li>
+    <li>Even then, the REAL response must ALSO carry a matching
+    <code>Access-Control-Allow-Origin</code> header before the browser
+    will expose its body to script.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>Server's CORS policy allows exactly one origin: http://127.0.0.1:51999
+
+=== Part A: request from the ALLOWED partner origin ===
+  preflight (OPTIONS) sent, then the real PUT -- both granted.
+  response body exposed to script: b'cross-origin-accessible data (if your origin is allowed)'
+
+=== Part B: IDENTICAL request from a DIFFERENT, disallowed origin ===
+  BLOCKED at the preflight step, as expected: preflight denied: server did
+  not grant 'PUT' from http://127.0.0.1:51970 (preflight status 204,
+  Access-Control-Allow-Origin=None)
+
+=== Part C: same-origin request (no CORS machinery involved at all) ===
+  no preflight needed -- same origin.</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output. Same request shape, same target server —
+    only the requesting origin differed between the granted and
+    blocked cases.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>if _needs_preflight(method, custom_headers):
+    status, headers, _ = _raw_request(target_url, "OPTIONS", preflight_headers)
+    allow_origin = headers.get("access-control-allow-origin")
+    allow_methods = headers.get("access-control-allow-methods", "")
+    if allow_origin != str(requesting_origin) or method not in allow_methods:
+        raise BlockedByCORS(...)
+# only reached if the preflight was explicitly granted:
+_, headers, body = _raw_request(target_url, method, actual_headers)
+if headers.get("access-control-allow-origin") != str(requesting_origin):
+    raise BlockedByCORS(...)</code></pre>
+  <p>
+    Two separate checks, two separate real network round trips. The
+    preflight decides whether the real request gets sent AT ALL. The
+    second check — on the real response — is the part that's easy to
+    forget: a browser doesn't just trust a prior preflight grant
+    forever; it checks the actual response too.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Handle credentialed CORS requests (cookies sent
+        cross-origin), which have their own additional, stricter rule
+        (`Access-Control-Allow-Origin` cannot be `*` when credentials
+        are involved) — not built here</li>
+        <li>Implement the full real "simple request" classification
+        rules — this module uses a deliberately simplified version</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Explain precisely why some cross-origin requests need a
+        preflight and others don't</li>
+        <li>Implement a real, working, origin-checking CORS policy
+        server from first principles</li>
+        <li>Correct the misconception that a preflight grant alone is
+        sufficient — the real response needs its own matching header too</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track2-applied-layer/phase5_networking/18_cors_preflight
+python run_cors_demo.py</code></pre>
+
+  <div class="callout">
+    If Part A UNEXPECTEDLY blocks: double check
+    <code>cors_server.ALLOWED_ORIGIN</code> matches
+    <code>DISALLOWED_ORIGIN</code>'s port in
+    <code>run_cors_demo.py</code> is genuinely different — if both
+    scripts were edited independently and now point at the same port,
+    the "disallowed" case would incorrectly succeed too.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      Why does the real CORS spec require a SEPARATE preflight round
+      trip for a `PUT` request, instead of just sending the `PUT`
+      immediately and checking `Access-Control-Allow-Origin` on the
+      response the same way a simple `GET` does? Think about what a
+      `PUT` might already have DONE by the time any response comes
+      back, before revealing the answer.
+    </summary>
+    <div class="answer">
+      Because by the time a response comes back, it's often too late —
+      a `PUT` (or `DELETE`, or a `POST` with a non-form content type)
+      can already have changed data on the server the moment it
+      arrived, regardless of what the response says afterward. A `GET`
+      is assumed "safe" in the sense that merely making the request
+      doesn't change server state, so checking permission
+      after-the-fact (on the response) is an acceptable risk — worst
+      case, a script read something it shouldn't have, which Module
+      17's blocking already prevents. A `PUT` needs permission
+      BEFORE the request is sent at all, precisely because the browser
+      cannot un-ring that bell once the server has acted on it. This is
+      exactly why "simple" methods skip preflight and "non-simple"
+      ones don't — the line is drawn based on which requests can have
+      an effect the response-side check comes too late to prevent.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Could a malicious server pretend to grant CORS to everyone with
+    a wildcard `*`?</dt>
+    <dd>Yes, and many legitimate public APIs genuinely do this
+    deliberately, when the API's data is meant to be freely
+    cross-origin accessible (a public weather API, for instance). The
+    server is always the one deciding its own policy — CORS gives
+    servers a real, deliberate way to opt in to being cross-origin
+    readable, precisely because sometimes that's exactly what's wanted.</dd>
+
+    <dt>Does the preflight request carry the actual data being sent
+    (e.g. the PUT's body)?</dt>
+    <dd>No — the preflight is deliberately lightweight: just the
+    intended method and headers, asked about in advance. The actual
+    body is only sent with the real request, after permission is
+    confirmed.</dd>
+
+    <dt>What happens to a "simple" GET request cross-origin — does it
+    skip ALL checking?</dt>
+    <dd>No — it skips the PREFLIGHT specifically, but the response-side
+    check (does the response carry a matching
+    `Access-Control-Allow-Origin`?) still applies, exactly as Module 17
+    demonstrated for the no-CORS default case. "Skips preflight" and
+    "skips all CORS checking" are not the same thing.</dd>
+
+    <dt>Is CORS a security mechanism protecting the SERVER, or the
+    BROWSER's user?</dt>
+    <dd>Primarily the user (and, transitively, the origin whose data
+    might otherwise leak) — CORS exists so a browser knows whether it's
+    safe to expose a cross-origin response to a potentially untrusted
+    script. It's not primarily there to protect the server from
+    receiving requests; Module 17's lesson (the request still happens)
+    applies here too.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    <strong>Phase 5 (Networking &amp; Origin Model) is complete.</strong>
+    You've built the full journey from DNS through TLS through raw HTTP
+    parsing through the two pillars of cross-origin policy. Phase 6
+    turns to what actually happens to the bytes once they arrive:
+    Module 19 builds a real HTML tokenizer — the first piece of an
+    actual rendering engine, starting exactly where a browser's parser
+    itself starts.
+  </p>
+
+  <div class="module-footer">
+    <a href="../17_origin_model_sop/tutorial.html">← Module 17: origin_model_sop</a>
+    <a href="../../phase6_parsing_dom/19_html_tokenizer/tutorial.html">Module 19: html_tokenizer →</a>
+  </div>
+</div>
