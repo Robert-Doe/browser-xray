@@ -1,0 +1,222 @@
+<title>Module 35: sandbox_escape_chain — No Single Layer Is "The" Defense</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#e0475f;--accent-dim:#471820;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 2 · PHASE 10 · MODULE 35 · COURSE FINALE</span>
+  <h1>sandbox_escape_chain</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: a fully compromised process is only genuinely contained
+    when multiple, independently-built, independently-verified
+    defenses are combined — each real mechanism this course built has
+    a real, limited scope, and a single layer alone leaves a real gap.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../../../track1-core-engine/phase3_sandboxing/09_least_privilege_tokens/tutorial.html">Module 9: least_privilege_tokens</a>
+    <a class="tag-link" href="../../../track1-core-engine/phase3_sandboxing/10_syscall_filtering/tutorial.html">Module 10: syscall_filtering</a>
+    <a class="tag-link" href="../../../track1-core-engine/phase4_mitigations/14_stack_canaries_cfi/tutorial.html">Module 14: stack_canaries_cfi</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A bank vault room has a locked door AND a guard who checks
+    photo ID AND a camera system AND a silent alarm wired to the
+    police. Ask "which one of these is the REAL security?" and the
+    honest answer is: none of them, alone. A thief who defeats the lock
+    still has to get past the guard. A thief who somehow gets past the
+    guard is still on camera and still trips the alarm. Real vault
+    security was never any single measure — it was the fact that
+    defeating ALL of them, together, is a dramatically harder problem
+    than defeating any one. This course's entire final module is that
+    same observation, proven directly: two real locks, tested together
+    and separately, on the exact same door.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>A "compromised renderer" probe — ordinary, unprivileged code,
+    standing in for what an attacker's code would do after a REAL
+    memory-safety bug (Module 14) gave them execution — attempts two
+    things: spawn a new process, and tamper with a file.</li>
+    <li>The identical probe runs four times, under four real
+    combinations of Module 10's Job Object restriction and Module 9's
+    least-privilege token.</li>
+    <li>With neither active, both actions succeed — a full compromise.</li>
+    <li>With only ONE active, that one specific action is blocked — but
+    the other succeeds completely.</li>
+    <li>Only with BOTH active are both actions blocked.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>=== Scenario A: no sandboxing at all ===
+spawn_new_process: SUCCEEDED
+tamper_with_browser_process_file: SUCCEEDED
+
+=== Scenario B: Job Object only (Module 10) ===
+spawn_new_process: BLOCKED (OSError: [WinError 1816] ...)
+tamper_with_browser_process_file: SUCCEEDED
+
+=== Scenario C: least-privilege token only (Module 9) ===
+spawn_new_process: SUCCEEDED
+tamper_with_browser_process_file: BLOCKED (PermissionError: ...)
+
+=== Scenario D: BOTH together ===
+spawn_new_process: BLOCKED (OSError: [WinError 1816] ...)
+tamper_with_browser_process_file: BLOCKED (PermissionError: ...)</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output — a clean 2×2 result. Each single defense
+    blocks exactly what it was built to block, nothing more.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>if restrict_job:
+    job = make_restrictive_job()
+    win32job.AssignProcessToJobObject(job, h_process)
+    win32process.ResumeThread(h_thread)
+...
+if restrict_token:
+    token = make_token_at_integrity("low")
+    proc_info = win32process.CreateProcessAsUser(token, ...)</code></pre>
+  <p>
+    Neither of these blocks is new code — this module's only real
+    contribution is the <code>if</code> statements deciding whether to
+    apply Module 10's mechanism, Module 9's mechanism, both, or
+    neither, to the identical target process, and then honestly
+    observing the result.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Claim this reproduces every layer real Chromium's sandbox
+        uses — AppContainer, more granular capability restrictions, and
+        others exist in production and aren't built here</li>
+        <li>Show a defense being DEFEATED — every scenario in this
+        module shows real defenses working exactly as designed</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Explain, with a real 2×2 result, why production sandboxes
+        always layer multiple independent mechanisms rather than
+        relying on one</li>
+        <li>Predict which specific action a given defense will and
+        won't block, based on its real, demonstrated scope</li>
+        <li>Reason about your OWN system designs the same way: what
+        does THIS mechanism actually cover, and what's still open if
+        it's the only one in place?</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track2-applied-layer/phase10_attack_surface/35_sandbox_escape_chain
+python run_sandbox_escape_demo.py</code></pre>
+
+  <div class="callout">
+    If Scenario C's file tamper UNEXPECTEDLY succeeds: confirm you're
+    running this as the same Windows user account throughout, with no
+    unusual security software altering default Mandatory Integrity
+    Control behavior — Module 9's own tutorial documents exactly this
+    expected write-blocked-read-allowed behavior in detail if you need
+    to cross-check.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      This course built exactly two Track-1 sandboxing mechanisms
+      (Modules 9 and 10) and combined them here. A real browser adds
+      MORE layers still (AppContainer, more granular syscall filtering,
+      GPU process isolation, and others). Given what Scenario D already
+      showed — that combining just two independent, LIMITED mechanisms
+      closed both gaps this module tested — what would you predict
+      happens to an attacker's realistic chances as a real system adds
+      even MORE independent layers, each with its own limited scope?
+      Think about how independent probabilities combine before
+      revealing the answer.
+    </summary>
+    <div class="answer">
+      Each additional, genuinely independent layer that must ALSO be
+      defeated multiplies the difficulty, not merely adds to it — if
+      bypassing each individual layer requires its own separate,
+      unrelated bug (as Modules 9 and 10's mechanisms did here: a token
+      bug doesn't help you bypass a Job Object, and vice versa), an
+      attacker needs a combination of independent bugs, not just one
+      bigger one. This is precisely why modern browser sandbox escapes
+      are typically reported as CHAINS of multiple distinct
+      vulnerabilities (a renderer memory-corruption bug, PLUS a
+      separate sandbox-escape bug, sometimes plus a kernel
+      privilege-escalation bug on top) rather than a single flaw — real
+      security researchers and browser vendors both think about
+      sandbox strength in exactly these terms: not "is there a bug,"
+      but "how many independent bugs, in how many independent
+      mechanisms, would someone need simultaneously." This module's
+      four-scenario matrix is a small, concrete, directly-observed
+      instance of that same, larger, real principle.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why didn't this module build a THIRD, brand-new sandboxing
+    mechanism to add to the mix?</dt>
+    <dd>Because the point wasn't "more mechanisms are better" in the
+    abstract — it was proving, with real evidence, that COMBINING
+    already-independently-verified mechanisms produces a qualitatively
+    different (much stronger) result than either alone. Two real,
+    already-proven-real mechanisms were sufficient to demonstrate that
+    precisely; a third would add complexity without adding to the
+    actual claim being proven.</dd>
+
+    <dt>Is this basically what "defense in depth" means?</dt>
+    <dd>Yes, exactly — this module is a direct, hands-on, measured
+    demonstration of that very common security phrase, which is often
+    stated as received wisdom without anyone showing WHY it's true.
+    Here, it's not received wisdom — it's a table of real, captured
+    pass/fail results.</dd>
+
+    <dt>Could Scenario D still be bypassed by some third mechanism this
+    course didn't build?</dt>
+    <dd>Almost certainly, in a real system — this module never claims
+    Scenario D represents PERFECT, unbreakable security, only that it
+    is demonstrably, measurably stronger than either single layer
+    alone. Real production sandboxes are judged the same way: not as
+    perfect, but as requiring an attacker to defeat an increasing
+    number of independent, real mechanisms.</dd>
+
+    <dt>What's the actual takeaway for MY OWN future security work?</dt>
+    <dd>When evaluating (or designing) any single security control, ask
+    precisely what it does and doesn't cover — the way this module
+    explicitly separated "blocks process spawning" from "blocks file
+    writes" rather than treating "sandboxing" as one vague, undifferentiated
+    concept. Real gaps hide exactly in the space between two controls
+    that each sound like they cover "the same thing" but actually don't.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>Course Complete</h2>
+  <p>
+    This is the last module. Across 35 modules and eight prerequisite
+    pages, you built — and personally verified, with real captured
+    output at every step — a complete vertical slice of what a browser
+    actually is: from CPU privilege rings and virtual memory, through
+    process isolation and sandboxing, through memory-safety mitigations,
+    through the full DNS→TCP→TLS→HTTP→DOM→CSSOM→layout→paint pipeline,
+    through a real JavaScript engine with two execution strategies, and
+    finally through every major browser security policy and the real
+    attacks each one exists to stop. Nothing in this course was taken on
+    faith — every claim was code you ran and output you read yourself.
+  </p>
+
+  <div class="module-footer">
+    <a href="../34_side_channel_timing/tutorial.html">← Module 34: side_channel_timing</a>
+    <a href="../../../ROADMAP.md">↑ Course Roadmap</a>
+  </div>
+</div>
