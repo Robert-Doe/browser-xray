@@ -1,0 +1,203 @@
+<title>Module 26: tree_walking_interpreter — Simplest, and Measurably Slow</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#3c8fc7;--accent-dim:#143047;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 2 · PHASE 8 · MODULE 26</span>
+  <h1>tree_walking_interpreter</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: the simplest way to "run" an AST is to walk it directly,
+    re-dispatching on every node's type on every single visit — correct,
+    but with a real, measured cost this module puts an exact number on.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../25_js_lexer_parser/tutorial.html">Module 25: js_lexer_parser</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    Imagine following a recipe by re-reading the entire cookbook page
+    from scratch before every single step — checking the title, the
+    ingredient list, the step number, and only THEN performing that one
+    step — and doing this full re-read for every step, every time,
+    even for a recipe you're making for the hundredth time today. It
+    works. You'll get a correct dish. But you're paying the "which
+    recipe, which step" overhead freshly, every single time, instead of
+    ever remembering "oh, step 4 always just means crack two eggs" and
+    skipping straight to doing it. A tree-walking interpreter is
+    exactly this — correct, straightforward, and paying real,
+    repeated overhead it never gets to amortize.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>To execute a statement, <code>execute_statement</code> checks
+    the node's Python type via a chain of <code>isinstance</code>
+    checks — every single time, even for the same node visited a
+    hundred thousand times in a loop.</li>
+    <li>Expressions work the same way through <code>evaluate</code>.</li>
+    <li>Variables live in a real, linked-chain <code>Environment</code>
+    — looking one up walks outward through parent scopes until it's
+    found, exactly matching real JS scoping.</li>
+    <li>A function call creates a brand-new <code>Environment</code>
+    whose PARENT is the function's closure — the scope that existed
+    when the function was originally defined, not where it's being
+    called from.</li>
+    <li><code>return</code> is implemented by raising a Python
+    exception that unwinds straight back out to the call boundary.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>=== Correctness: recursion ===
+  fib(10) = 55.0 (expected 55)
+
+=== Correctness: loops and mutation ===
+  sum of 0..99 = 4950.0 (expected 4950)
+
+=== Correctness: string concatenation and logical operators ===
+  greeting = 'hello world' (expected 'hello world')
+  flag = True (expected True)
+
+=== Benchmark: fib(24), direct tree-walking evaluation ===
+  fib(24) = 46368
+  wall-clock time: 1614.8 ms</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output and a real, measured timing number — the
+    exact baseline Module 27's bytecode VM gets compared against.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>def evaluate(node, env):
+    if isinstance(node, NumericLiteral):
+        return node.value
+    if isinstance(node, Identifier):
+        return env.get(node.name)
+    ...
+    if isinstance(node, BinaryExpr):
+        return evaluate_binary(node, env)</code></pre>
+  <p>
+    Every single one of <code>fib(24)</code>'s roughly 150,000
+    recursive calls re-runs this ENTIRE chain of type checks, for every
+    node it touches, from scratch. Nothing here remembers "last time we
+    saw a <code>BinaryExpr</code> here, it meant subtraction" — that
+    memory is exactly what a bytecode representation (Module 27) is
+    built to provide instead.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Explain WHY this is slower than an alternative — that
+        requires actually building and measuring that alternative
+        (Module 27)</li>
+        <li>Correctly scope <code>let</code>/<code>const</code> to a
+        block (this interpreter's blocks share their parent's scope —
+        a deliberate, flagged simplification)</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Implement a real, correct tree-walking interpreter with
+        genuine closures, recursion, and control flow</li>
+        <li>Explain precisely what makes an interpreter "tree-walking"
+        as opposed to something else</li>
+        <li>Cite a real, measured performance number for a specific,
+        repeatable workload on this exact machine</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track2-applied-layer/phase8_js_engine/26_tree_walking_interpreter
+python run_interpreter_demo.py</code></pre>
+
+  <div class="callout">
+    Your own <code>fib(24)</code> timing WILL differ from the captured
+    1614.8 ms — this depends heavily on your specific machine's CPU and
+    current load. What matters for Module 27's comparison is the
+    RELATIVE difference on your own machine, run back to back, not
+    matching this exact number.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      This interpreter's blocks don't create their own scope, meaning
+      `let` inside an `if` behaves like `var` (visible outside the
+      block) rather than real, block-scoped `let`. Write a short program
+      in your head where this difference would produce genuinely WRONG
+      behavior compared to real JS, before revealing one example.
+    </summary>
+    <div class="answer">
+      Consider: `if (true) { let x = 5; } console.log(x);` — in real
+      JS, this throws a `ReferenceError: x is not defined`, because
+      `let`-declared `x` only exists inside the `if` block. In THIS
+      module's interpreter, `x` would still be visible and equal to 5
+      after the block, because blocks share their parent's `Environment`
+      rather than creating their own. This is exactly the kind of gap
+      this module's `DECISIONS.md` flags explicitly rather than letting
+      you discover it by surprise — a genuinely real difference from
+      modern JS semantics, not a hidden bug pretending to be a feature.
+      Fixing it would mean giving `BlockStatement` execution its own
+      child `Environment` and letting variable lookup fail past that
+      boundary once the block finishes — a real, natural extension
+      this module deliberately left out to keep the scope model simple.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why use a Python exception for `return` instead of, say, a
+    special sentinel return value threaded through every function?</dt>
+    <dd>Both are legitimate, real techniques. Exceptions let
+    `return` unwind arbitrarily deeply nested control flow (a `return`
+    inside three nested `if`s inside a `while`) in one motion, using
+    Python's own stack-unwinding machinery, rather than needing every
+    single statement-execution function to check "did a return already
+    happen?" after every recursive call.</dd>
+
+    <dt>Does a real JS engine like V8 ever use a tree-walking
+    interpreter at all?</dt>
+    <dd>Historically, early JS engines largely did work this way. Modern
+    engines like V8 use a bytecode interpreter (Ignition) as a baseline
+    tier specifically because of the exact cost this module measures,
+    with a JIT compiler (TurboFan) further optimizing hot code beyond
+    even that — Module 27 builds the bytecode step of that real,
+    historical progression.</dd>
+
+    <dt>Why does `fib(10)` print as `55.0` instead of `55`?</dt>
+    <dd>Because every number in this interpreter is a Python `float`,
+    matching real JS's own single numeric type exactly (see Module 25's
+    `DECISIONS.md`) — `55.0` and `55` represent the identical numeric
+    value; JS itself doesn't distinguish them either.</dd>
+
+    <dt>Could this interpreter run a REAL, unmodified JS program from
+    the actual web?</dt>
+    <dd>Only if that program stayed entirely within this module's
+    implemented subset (Module 25's scope: no object/array literals,
+    arrow functions, `for` loops, etc.) — most real-world JS uses
+    features well beyond what this course's engine implements, which is
+    an intentional, stated scope boundary, not an oversight.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You have a real, correct, measured baseline. Module 27 compiles this
+    exact program's AST into bytecode instead, runs it on a small
+    virtual machine, and benchmarks it against the identical
+    <code>fib(24)</code> workload — putting a real number on exactly
+    how much the repeated dispatch overhead actually costs.
+  </p>
+
+  <div class="module-footer">
+    <a href="../25_js_lexer_parser/tutorial.html">← Module 25: js_lexer_parser</a>
+    <a href="../27_bytecode_vm/tutorial.html">Module 27: bytecode_vm →</a>
+  </div>
+</div>
