@@ -1,0 +1,201 @@
+<title>Module 9: least_privilege_tokens — Same User, Fewer Rights</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#e08a3c;--accent-dim:#4a2f14;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 1 · PHASE 3 · MODULE 09</span>
+  <h1>least_privilege_tokens</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: a process's OS-level rights can be reduced below its
+    parent's, purely via the security token it's launched with — same
+    Windows user account, same file, same code, genuinely different
+    outcome.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../../phase1_bare_metal/04_process_anatomy/tutorial.html">Module 4: process_anatomy (integrity levels)</a>
+    <a class="tag-link" href="../../../prerequisites/05_handles_and_fds.html#access-rights">handles carry access rights</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A hospital issues every staff member the same photo ID badge format
+    — but a badge can be printed with different clearance stripes on
+    it. A surgeon's badge and a visitor-escort's badge might belong to
+    employees with the identical HR record, identical login, identical
+    name — but the badge itself carries a printed clearance level the
+    door readers check. Hand that same person a "visitor" badge instead
+    of their usual one, and the same person, unchanged, suddenly can't
+    open the same doors they could a moment ago. Nothing about who they
+    are changed. What changed was the badge.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>The parent process duplicates its <em>own</em> security token —
+    not anyone else's — which Windows always permits without special
+    privilege.</li>
+    <li>It sets the duplicate's integrity level field to "Low" — also
+    always permitted, since lowering integrity never requires elevated
+    rights (only raising it does).</li>
+    <li>It calls <code>CreateProcessAsUser</code> with that lowered
+    token — normally a privileged operation, except Windows exempts
+    this specific case: spawning with a duplicate of your own token.</li>
+    <li>The resulting child process runs as the <em>identical Windows
+    user account</em>, but every access check the kernel performs for
+    it now also considers that Low integrity label.</li>
+    <li>The child attempts to read, then (in a separate run) write, the
+    identical file the parent created.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>=== Attempt 1: Low-integrity child, READ ===
+READ OK: 'data owned by the parent (Medium-integrity) process'
+
+=== Attempt 2: Low-integrity child, WRITE ===
+WRITE FAILED: PermissionError: [Errno 13] Permission denied: '...\parent_owned_file.txt'
+
+=== Attempt 3 (control): Medium-integrity child, WRITE ===
+WRITE OK</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output. Same file, same user account, same code —
+    only the token's integrity level changed between attempts 2 and 3.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>duplicate = win32security.DuplicateTokenEx(
+    original_token, win32security.SecurityImpersonation,
+    win32con.TOKEN_ALL_ACCESS, win32security.TokenPrimary, None,
+)
+sid = win32security.ConvertStringSidToSid(INTEGRITY_SIDS["low"])
+win32security.SetTokenInformation(
+    duplicate, ntsecuritycon.TokenIntegrityLevel, (sid, SE_GROUP_INTEGRITY)
+)</code></pre>
+  <p>
+    This is the entire mechanism, and notice what it does <em>not</em>
+    involve: no new user account, no password, no service, no
+    administrator elevation. It's a copy of a token this process
+    already legitimately holds, with one field set to a lower value.
+    That's the whole primitive real sandboxes are built from.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Block specific syscalls outright, regardless of integrity
+        level (Module 10)</li>
+        <li>Explain why READ succeeded here — that gap is exactly what
+        motivates combining integrity levels with OTHER restrictions in
+        a real sandbox (Module 10's job)</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Spawn a genuinely less-privileged child process without
+        needing elevation or a separate account</li>
+        <li>Correctly distinguish "no write up" from "no access at
+        all" — a frequently confused pair</li>
+        <li>Read a permission failure and know precisely which
+        mechanism (DACL vs. integrity label) is responsible</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track1-core-engine/phase3_sandboxing/09_least_privilege_tokens
+python run_least_privilege_demo.py</code></pre>
+
+  <div class="callout">
+    If the printed lines appear in a strange order (all child output
+    before the parent's own status lines): this is a real buffering
+    quirk, not a broken result — see <code>DECISIONS.md</code>. The
+    script already includes the fix (<code>flush=True</code>); if
+    you're piping this script's output into another tool yourself,
+    keep that in mind for your own scripts too.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      Attempt 1 (Low-integrity READ) succeeded. Does that mean a
+      Low-integrity renderer process could read your browser's saved
+      passwords file, if it somehow knew the path? Think about what
+      would ACTUALLY need to be true for that, before revealing the
+      answer.
+    </summary>
+    <div class="answer">
+      Not by integrity level alone — but this is exactly the gap real
+      browser sandboxes have to close with something beyond what this
+      module built. If a sensitive file only relies on the DEFAULT
+      "no write up" MIC policy, a Low-integrity process genuinely CAN
+      still read it, exactly like Attempt 1 showed. Real hardened
+      systems close this gap in (at least) one of two ways: explicitly
+      marking specific sensitive files/objects with a stricter
+      "no read up" policy via their mandatory label (not the default),
+      or — the approach Module 10 introduces — restricting which
+      syscalls/APIs the process can even attempt in the first place,
+      regardless of what the target's ACL or integrity label says. This
+      module deliberately surfaced the read-succeeds gap rather than
+      hiding it, because assuming "low integrity = can't read anything"
+      is a real, dangerous misconception worth correcting directly.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why doesn't creating this low-integrity child need
+    Administrator rights?</dt>
+    <dd>Because you're only ever narrowing your own already-held
+    rights, never claiming someone else's. Windows' privilege checks
+    exist to stop you from acting as someone more privileged than you —
+    they were never designed to stop you from acting as less. See
+    <code>DECISIONS.md</code> for the exact mechanism.</dd>
+
+    <dt>Is "integrity level" the only thing separating a sandboxed
+    renderer from a normal process in real Chromium?</dt>
+    <dd>No — integrity level is one layer among several (also
+    restricted tokens with specific SIDs removed/denied, job objects,
+    and on newer designs, more granular capability-based restrictions).
+    This module deliberately isolates just the integrity-level piece so
+    it can be understood on its own before Module 10 adds syscall-level
+    filtering on top.</dd>
+
+    <dt>What would happen if I tried to RAISE a token's integrity
+    instead of lowering it?</dt>
+    <dd><code>SetTokenInformation</code> would fail — raising requires
+    <code>SeRelabelPrivilege</code>, which an ordinary user token does
+    not hold by default. This isn't a bug in the module; it's the exact
+    asymmetry (easy to lower, hard to raise) that makes least-privilege
+    delegation safe to do without a broker process.</dd>
+
+    <dt>Why is the write failure a plain <code>PermissionError</code>
+    rather than something more specific mentioning "integrity"?</dt>
+    <dd>Python's <code>open()</code> surfaces the underlying Win32
+    access-denied error as a generic <code>PermissionError</code> —
+    the OS doesn't distinguish "denied by DACL" from "denied by
+    mandatory integrity policy" in the error Python receives at this
+    level. Confirming <em>which</em> mechanism caused a specific denial
+    (as opposed to just knowing something was denied) generally
+    requires lower-level tooling than a plain Python file open.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You've reduced what a process can touch. Module 10 reduces what a
+    process can even <em>attempt</em> — blocking specific syscalls
+    outright at the OS level, regardless of what any file's permissions
+    or integrity label say, closing exactly the kind of gap this
+    module's Brain Exercise surfaced.
+  </p>
+
+  <div class="module-footer">
+    <a href="../../phase2_process_ipc/08_toy_browser_shell/tutorial.html">← Module 08: toy_browser_shell</a>
+    <a href="../10_syscall_filtering/tutorial.html">Module 10: syscall_filtering →</a>
+  </div>
+</div>
