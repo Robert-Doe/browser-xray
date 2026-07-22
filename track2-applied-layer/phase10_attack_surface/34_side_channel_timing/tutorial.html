@@ -1,0 +1,217 @@
+<title>Module 34: side_channel_timing — SOP Was Never About Timing</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#9f3fc7;--accent-dim:#331747;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 2 · PHASE 10 · MODULE 34</span>
+  <h1>side_channel_timing</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: a real, measurable timing side-channel can recover secret
+    data even when the Same-Origin Policy and site isolation correctly
+    block every direct read — because neither policy was ever designed
+    to hide how LONG something takes, only what it CONTAINS.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../../phase5_networking/17_origin_model_sop/tutorial.html">Module 17: origin_model_sop</a>
+    <a class="tag-link" href="../../../track1-core-engine/phase3_sandboxing/11_site_isolation_model/tutorial.html">Module 11: site_isolation_model</a>
+    <a class="tag-link" href="../../../track1-core-engine/phase4_mitigations/12_aslr_and_leaks/tutorial.html">Module 12: aslr_and_leaks</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A locked vault's door is genuinely, completely opaque — you cannot
+    see the combination through it, no matter how you try. But you CAN
+    time how long the mechanism takes to reject a wrong combination.
+    If a real mechanical lock's internal wheels click into place one
+    at a time, correct-so-far, and the whole mechanism only jams and
+    stops turning at the FIRST wrong wheel, someone patiently timing
+    each attempt can learn the combination one digit at a time — never
+    once seeing inside the vault, never touching a single tumbler
+    directly. The vault's opacity was real and total. It just was never
+    the only thing that mattered.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>A toy server verifies a secret token using a comparison that
+    exits the INSTANT it finds a mismatched character.</li>
+    <li>An attacker script — genuinely, correctly blocked by SOP from
+    ever reading the server's response content — instead just measures
+    how LONG each guess takes to be rejected.</li>
+    <li>A guess with more correct leading characters takes measurably
+    longer, because the comparison got further before exiting.</li>
+    <li>Trying every possible character at each position, keeping
+    whichever took longest, recovers the secret one character at a
+    time — using nothing but timing.</li>
+    <li>Switching the server to a constant-time comparison — one that
+    always does the same work regardless of correctness — removes the
+    signal entirely.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>api.example.com's real secret token (never sent to the attacker directly): 'X7f9Qz2A'
+
+=== BEFORE: api.example.com uses a non-constant-time comparison ===
+  Attacker recovered, via timing alone: 'X7f9Qz2A'
+  Matches the real secret? True
+
+=== AFTER: api.example.com switches to a constant-time comparison ===
+  Attacker recovered, via the IDENTICAL timing attack: 'beoMbBIu'
+  Matches the real secret? False</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output. Identical attacker, identical technique,
+    identical number of guesses — the secret's own comparison function
+    was the only thing that changed.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>def naive_compare(guess, secret):
+    for i in range(len(secret)):
+        if guess[i] != secret[i]:
+            return False   # <- exits HERE, having done LESS work for a wrong guess
+        time.sleep(PER_CHARACTER_DELAY)
+    return True</code></pre>
+  <p>
+    That single early <code>return False</code> is the entire
+    vulnerability. It's not a contrived, artificial flaw — it's the
+    natural, obvious way most programmers write a string comparison,
+    which is exactly why non-constant-time comparison bugs are a real,
+    recurring category of vulnerability in actual production code.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Demonstrate a genuine CPU-cache-timing (Flush+Reload) or
+        speculative-execution (Spectre) channel — a real attempt at
+        this in pure Python produced no reliable signal (documented in
+        <code>DECISIONS.md</code>), so this module uses a different,
+        real timing-leak class instead</li>
+        <li>Attack anything over a real network — this stays entirely
+        in-process, on a hardcoded demo secret</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Explain precisely why SOP/site isolation blocking direct
+        reads is NOT the same claim as "no information can leak"</li>
+        <li>Recognize non-constant-time comparison as a real,
+        recurring, and completely preventable vulnerability class</li>
+        <li>Explain why real Site Isolation targets PROCESS boundaries
+        specifically, as motivated by Spectre-class concerns beyond
+        this module's own narrower demonstration</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track2-applied-layer/phase10_attack_surface/34_side_channel_timing
+python run_side_channel_demo.py</code></pre>
+
+  <div class="callout">
+    If the "BEFORE" attack doesn't recover the exact secret on your
+    machine: a very loaded system can add enough scheduling noise to
+    overwhelm the (deliberately small) injected per-character delay.
+    Try increasing <code>PER_CHARACTER_DELAY</code> in
+    <code>timing_side_channel.py</code>, or close other demanding
+    programs before re-running.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      This module's attack needed the attacker to make MANY repeated,
+      timed guesses against the same secret. In a real browser talking
+      to a real server over a real network, what makes this attack
+      dramatically HARDER than this module's clean, in-process demo —
+      and what does a real attacker typically do to compensate? Think
+      about what sits between "the server's real processing time" and
+      "what the attacker actually measures," before revealing the answer.
+    </summary>
+    <div class="answer">
+      Real network jitter — variable, unpredictable delay from network
+      routing, congestion, the operating system's own scheduling on
+      both ends — adds noise far larger than this module's clean,
+      local, microsecond-scale signal. A real-world timing attack over
+      a network compensates the same way this module's own
+      `_time_guess()` does, just at a much larger scale: take MANY
+      repeated measurements of the same guess and use a statistical
+      technique (like the minimum, or a more sophisticated statistical
+      estimator) to filter out noise and recover the smaller, real
+      underlying signal. This is precisely why real, practical
+      network-based timing attacks (several of which are real,
+      published, and were used against real systems historically)
+      often require thousands or millions of requests to reliably
+      extract even a modest amount of secret information — the
+      underlying vulnerability is identical to what this module
+      demonstrates; only the amount of statistical averaging needed to
+      see it clearly differs.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why does the "AFTER" attack still run for a while, if it can't
+    recover anything?</dt>
+    <dd>Because the ATTACK ITSELF doesn't know in advance that it will
+    fail — it still tries every candidate character at every position
+    and measures timing, exactly as before. The difference is that
+    those measurements no longer correlate with correctness at all, so
+    the "best" (longest-timed) guess at each position is effectively
+    random noise, not a real signal.</dd>
+
+    <dt>Is `hmac.compare_digest` (Python's real, built-in
+    constant-time comparison) doing something fundamentally different
+    from this module's `constant_time_compare`?</dt>
+    <dd>Conceptually the same core idea (no early exit, uniform work
+    regardless of where a mismatch occurs) — Python's real
+    implementation is more carefully hardened at a lower level (partly
+    implemented in C, specifically to resist compiler optimizations
+    that could reintroduce timing variance) than this module's
+    illustrative Python version, but the defensive PRINCIPLE is
+    identical.</dd>
+
+    <dt>Does adding `time.sleep()` make MY code vulnerable, or was it
+    just needed to make this demo reliably measurable?</dt>
+    <dd>Purely a demo necessity — see `DECISIONS.md`. The real
+    vulnerability is the EARLY EXIT (`return False` at the first
+    mismatch), not the presence of a delay. Real vulnerable code
+    doesn't need an artificial sleep at all; the natural cost of doing
+    "more work" (comparing more characters) before exiting is already
+    enough of a signal in real systems, especially over many repeated,
+    statistically-averaged measurements.</dd>
+
+    <dt>Could this same class of bug exist in a JWT/API-key check, not
+    just a plain string secret?</dt>
+    <dd>Yes, and this is a real, well-documented pattern —
+    non-constant-time comparison bugs have been found historically in
+    real authentication code checking API keys, HMAC signatures, and
+    session tokens. It's exactly why security-conscious cryptographic
+    and authentication libraries go out of their way to provide (and
+    developers are strongly encouraged to use) dedicated constant-time
+    comparison functions rather than a language's default `==`.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You've seen every individual defense this course built work, and
+    one real leak that slips past defenses that were never designed to
+    catch it. Module 35, the final module, ties Track 1 and Track 2
+    together completely: a full compromise chain requiring BOTH a
+    memory-safety mitigation bypass AND a syscall-filter bypass —
+    proving real security depends on layered defenses, none of which
+    alone is the whole story.
+  </p>
+
+  <div class="module-footer">
+    <a href="../33_clickjacking_uxss/tutorial.html">← Module 33: clickjacking_uxss</a>
+    <a href="../35_sandbox_escape_chain/tutorial.html">Module 35: sandbox_escape_chain →</a>
+  </div>
+</div>
