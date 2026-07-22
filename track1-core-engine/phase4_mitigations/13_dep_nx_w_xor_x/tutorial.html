@@ -1,0 +1,213 @@
+<title>Module 13: dep_nx_w_xor_x — Data Is Data, Code Is Code, By Decree</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#c94f4f;--accent-dim:#421c1c;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 1 · PHASE 4 · MODULE 13 · FIRST C MODULE</span>
+  <h1>dep_nx_w_xor_x</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: DEP/W^X is not a heuristic — identical machine code bytes,
+    identical logic, and the CPU's decision to allow or kill execution
+    depends on exactly one thing: whether the OS was told, in advance,
+    that this specific page may contain code.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../../../prerequisites/01_virtual_memory.html#paging">page permission bits</a>
+    <a class="tag-link" href="../../phase1_bare_metal/02_privilege_rings/tutorial.html">Module 2: privilege_rings</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A commercial kitchen has two areas: the prep counter (where
+    ingredients get chopped — "data") and the actual stove (where
+    cooking — "execution" — happens). A health inspector's rule is
+    simple and absolute: nothing gets cooked anywhere except a stove,
+    full stop, no matter how ready-to-cook it looks sitting on the prep
+    counter. It doesn't matter if someone arranges raw ingredients on
+    the counter in the exact shape of a finished dish — the counter is
+    not a heat source, and no amount of clever arrangement changes that.
+    If you want something cooked, it has to be physically moved to a
+    stove first. DEP is that same absolute, structural rule, enforced
+    by the one thing capable of actually enforcing it: the CPU itself.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li><code>dep_violation.c</code> hand-assembles six real x86-64
+    bytes — a complete function that returns 42 — and copies them into
+    memory from <code>malloc()</code>: ordinary heap memory, READ+WRITE.</li>
+    <li>It casts that memory to a function pointer and calls it.</li>
+    <li>The CPU begins fetching instructions from that address — and
+    its page-table-consulted execute-permission bit says no. Windows
+    raises an access violation; the process is terminated.</li>
+    <li><code>dep_legitimate_jit.c</code> writes the identical six
+    bytes, but into memory obtained via <code>VirtualAlloc</code> with
+    <code>PAGE_EXECUTE_READWRITE</code> explicitly requested.</li>
+    <li>The identical jump-and-call succeeds. The function runs,
+    returns 42, and the program exits cleanly.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>=== Running dep_violation.exe (heap memory, no execute permission) ===
+Wrote 6 bytes of real machine code into a malloc'd heap buffer at 000002bad35124e0
+Heap memory is READ+WRITE, never EXECUTE. Jumping into it now...
+  process exit code: 3221225477 (0xC0000005)
+  -> STATUS_ACCESS_VIOLATION: the CPU refused to execute this page.
+
+=== Running dep_legitimate_jit.exe (VirtualAlloc'd, PAGE_EXECUTE_READWRITE) ===
+Wrote 6 bytes of the SAME machine code into a VirtualAlloc'd, PAGE_EXECUTE_READWRITE region at 0000029ce0e70000
+This page was explicitly, deliberately marked executable. Jumping in...
+Returned cleanly. Result: 42 (expected 42)
+  process exit code: 0 (clean exit)</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output — confirmed both directly and via PowerShell's
+    <code>$LASTEXITCODE</code>, which showed the identical value as the
+    signed NTSTATUS <code>-1073741819</code>.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>unsigned char code[] = { 0xB8, 0x2A, 0x00, 0x00, 0x00, 0xC3 }; /* mov eax,42; ret */
+unsigned char *buffer = malloc(sizeof(code));
+memcpy(buffer, code, sizeof(code));
+func_ptr f = (func_ptr)buffer;
+int result = f();  /* crashes here */</code></pre>
+  <p>
+    Every one of those six bytes is a real, meaningful x86-64
+    instruction encoding — not a placeholder. The only thing separating
+    this crashing program from the working one is which allocator
+    supplied the memory, and therefore what permission bits the page
+    table entry for that memory carries. Same bytes, same cast, same
+    call — different fate, decided entirely by the page's own metadata.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Demonstrate a REAL memory-corruption bug producing this
+        kind of injected code (this module wrote known-good bytes
+        deliberately; Module 14 introduces an actual overflow bug)</li>
+        <li>Explain why some real historical exploits still managed to
+        run arbitrary logic despite DEP (that's ROP/JOP — chaining
+        existing, already-executable code instead of injecting new
+        code — genuinely out of this course's scope, but worth knowing
+        the name of)</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>State DEP/W^X's guarantee precisely, with a passing and a
+        failing case you built and ran yourself</li>
+        <li>Explain why a JIT compiler (a JS engine, this browser
+        course's eventual Module 27) needs to deliberately request
+        executable memory, and why that's not a security hole by itself</li>
+        <li>Read a Windows crash's exit code and recognize
+        <code>0xC0000005</code> on sight</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track1-core-engine/phase4_mitigations/13_dep_nx_w_xor_x
+python run_dep_demo.py</code></pre>
+  <p>This compiles both C programs with gcc (MSYS2 mingw-w64) and runs
+  each, reporting real exit codes.</p>
+
+  <div class="callout">
+    If compilation fails with no error message: this course's gcc
+    (MSYS2 mingw-w64) locates its own helper tools via <code>PATH</code>
+    — if you're invoking gcc yourself outside this module's script,
+    make sure <code>C:\msys64\mingw64\bin</code> is on <code>PATH</code>,
+    not just the full path to <code>gcc.exe</code> itself. See
+    <code>DECISIONS.md</code> for the exact failure this caused while
+    building this module.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      A JavaScript engine's JIT compiler needs pages that are, at
+      different moments, WRITABLE (while the JIT is generating code)
+      and EXECUTABLE (once it's ready to run). Given this module's
+      strict data-vs-code split, how should a security-conscious JIT
+      actually manage that page's permissions over time? Think about
+      what "W^X" (write XOR execute) as a stricter rule implies, before
+      revealing the answer.
+    </summary>
+    <div class="answer">
+      It should never leave the page BOTH writable and executable at
+      the same time. The safe pattern — literally named "W^X," write
+      XOR execute — is: allocate the page as writable (not executable),
+      write the generated code into it, then explicitly call
+      <code>VirtualProtect</code> to flip it to executable-and-NOT-writable
+      before ever running it. If new code needs to be written later, flip
+      it back to writable-not-executable first. This module's
+      <code>dep_legitimate_jit.c</code> deliberately used the LOOSER
+      <code>PAGE_EXECUTE_READWRITE</code> (writable AND executable
+      simultaneously) specifically because that's simpler to demonstrate
+      — but it's exactly the pattern real hardened JIT compilers avoid,
+      because a page that's both writable and executable at once is a
+      much easier target if an attacker ever manages to write to it
+      unexpectedly: they get to inject code AND run it through the same
+      permission window, with no separate "flip to executable" step to
+      interfere with.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why does the crashing program's exit code look like a huge
+    number instead of something small like 1 or -1?</dt>
+    <dd>Because it isn't an exit code the program chose — it's the
+    NTSTATUS value of the exception that killed it, which Windows uses
+    directly as the process's exit code when no handler catches the
+    fault. <code>0xC0000005</code> is Microsoft's own defined constant
+    for <code>STATUS_ACCESS_VIOLATION</code>, the same value you'd see
+    in Event Viewer for any application crash of this type.</dd>
+
+    <dt>Would this crash happen on a 32-bit build too?</dt>
+    <dd>Historically, DEP had per-application opt-out mechanisms on
+    32-bit Windows for compatibility with old software that relied on
+    executing writable memory. 64-bit Windows removed that
+    opt-out for 64-bit processes — DEP/NX enforcement is a permanent,
+    non-optional property of running as a 64-bit process, which is part
+    of why this course, per the ROADMAP's tools decision, targets 64-bit
+    builds throughout.</dd>
+
+    <dt>Is the malloc'd buffer ever executable on ANY system?</dt>
+    <dd>Not on any system with a working NX/DEP-equivalent enforcement,
+    which includes essentially all mainstream 64-bit CPUs and OSes
+    today. Extremely old CPUs predating the NX bit (pre-2004-era x86
+    hardware) genuinely had no hardware mechanism to prevent this — DEP
+    is fundamentally a hardware feature the OS merely turns on and
+    enforces via page tables, not something the OS invents from nothing.</dd>
+
+    <dt>Why not just always use PAGE_EXECUTE_READWRITE everywhere and
+    avoid crashes entirely?</dt>
+    <dd>Because that would defeat the entire point — it would mean
+    every writable page in your process is also a potential place to
+    run injected code, exactly the scenario DEP exists to prevent. The
+    "inconvenience" of needing to explicitly request executable memory
+    is the security property, not an accident to work around.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You've proven the mitigation works against injected, foreign code.
+    Module 14 goes one step further and builds a REAL vulnerability — a
+    genuine stack buffer overflow, in C, that actually corrupts memory
+    it shouldn't — then shows exactly what a stack canary catches, and
+    precisely where that protection's edges are.
+  </p>
+
+  <div class="module-footer">
+    <a href="../12_aslr_and_leaks/tutorial.html">← Module 12: aslr_and_leaks</a>
+    <a href="../14_stack_canaries_cfi/tutorial.html">Module 14: stack_canaries_cfi →</a>
+  </div>
+</div>
