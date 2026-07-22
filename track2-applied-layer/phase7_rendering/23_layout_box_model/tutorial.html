@@ -1,0 +1,204 @@
+<title>Module 23: layout_box_model — Style Says "Blue," Layout Says "Where"</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#c78a2f;--accent-dim:#472e14;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 2 · PHASE 7 · MODULE 23</span>
+  <h1>layout_box_model</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: layout is a genuine recursive geometry computation — every
+    box's real x, y, width, and height derives mechanically from its
+    parent's available space, its own CSS box-model properties, and
+    its children's own computed geometry.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../22_style_computation/tutorial.html">Module 22: style_computation</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A moving crew stacking boxes into a truck doesn't know in advance
+    exactly where each box will sit — they know the truck's total
+    width, and they place each box against the wall, filling it unless
+    told a box needs to be narrower, then stack the next box directly
+    on top of wherever the last one ended. No box's final position is
+    decided ahead of time by a floor plan; it FALLS OUT of a simple,
+    repeated rule applied one box at a time, top to bottom. Nobody
+    computes the truck's total load height in advance either — it's
+    just whatever height the stack of boxes actually adds up to, once
+    they're all placed.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>An element's own margin and padding are read from its computed
+    style (Module 22).</li>
+    <li>If it has an explicit <code>width</code>, that's its content
+    width. Otherwise, its content width fills whatever space its parent
+    made available, minus its own margin and padding.</li>
+    <li>Its children are laid out one at a time, each starting exactly
+    where the previous one's box ended vertically — real block-flow
+    stacking.</li>
+    <li>If the element has no explicit <code>height</code>, its final
+    height is simply the sum of everything its children ended up
+    taking, plus its own padding.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>CSS: #container { width: 400px; padding: 10px; }
+     #a { height: 50px; margin: 5px; }
+     #b { height: 80px; }
+
+<div> x=0 y=0 width=420 height=150
+  <div> x=15 y=10 width=390 height=50
+  <div> x=10 y=60 width=400 height=80
+
+container: explicit width 400px + 10px padding each side = 420px total
+           auto height = sum of both children's heights + padding = 150px
+#a:        margin: 5px shrinks its available width to 400 - 10 = 390px
+#b:        no margin -- takes the FULL 400px content width: 400px
+#b's y (60) = #a's y (10) + #a's height (50) -- real block-flow stacking</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured, hand-verifiable geometry — every number here was
+    checked by hand arithmetic before being trusted.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>content_width = explicit_width if explicit_width is not None \
+    else available_width - 2 * margin - 2 * padding
+...
+for child in element.children:
+    if isinstance(child, Element):
+        child_box = layout_block(child, content_x, cursor_y, content_width)
+        cursor_y += child_box.height</code></pre>
+  <p>
+    Notice <code>cursor_y</code> only ever moves forward, by exactly
+    the height of whatever was just placed. That one line IS block-flow
+    stacking — there's no separate "positioning" step; position is a
+    direct, mechanical consequence of processing children in order.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Lay out text — no font metrics, no line wrapping; text
+        contributes zero geometry in this module</li>
+        <li>Handle inline elements, flexbox, grid, floats, or
+        positioned layout — block flow only</li>
+        <li>Turn any of this into actual pixels on a screen — that's
+        Module 24</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Hand-compute the exact box geometry CSS's block layout
+        model would produce for a given width/height/margin/padding
+        combination</li>
+        <li>Explain precisely why an element's auto width depends on
+        its OWN margin, not any sibling's</li>
+        <li>Explain the real difference between content-box and
+        border-box sizing, and which one this module (and CSS's
+        default) uses</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track2-applied-layer/phase7_rendering/23_layout_box_model
+python run_layout_demo.py</code></pre>
+
+  <div class="callout">
+    If a box's width looks wrong: check whether you're thinking in
+    <code>box-sizing: border-box</code> terms (width includes padding)
+    — this module, matching CSS's own DEFAULT, uses
+    <code>content-box</code> sizing, where an explicit <code>width</code>
+    describes content only, and padding is added ON TOP of it.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      Suppose `#container`'s CSS were changed to
+      `width: 400px; box-sizing: border-box; padding: 10px;` (a real,
+      common CSS property this module doesn't implement). Would you
+      expect the container's TOTAL rendered width to still be 420px, or
+      something else? Think about what `box-sizing: border-box`
+      actually redefines before revealing the answer.
+    </summary>
+    <div class="answer">
+      It would be exactly 400px, not 420px. `box-sizing: border-box`
+      redefines what the `width` property MEANS: instead of describing
+      content only (this module's implemented behavior, and CSS's
+      default), it describes the TOTAL box including padding and
+      border — so the content area actually SHRINKS to accommodate the
+      padding within that same fixed 400px, rather than the total box
+      growing past it. This is precisely why many real-world CSS resets
+      (a common one: `* { box-sizing: border-box; }` applied globally)
+      exist — content-box's behavior (where adding padding silently
+      grows your total layout width) is widely considered less
+      intuitive for most real page-building work, which is exactly why
+      so many projects deliberately override CSS's own default. This
+      module implements only the default; recognizing that
+      `box-sizing` changes the width arithmetic itself, not just a
+      cosmetic detail, is real, transferable CSS knowledge.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why does text contribute zero height in this module, when
+    obviously text takes up visible space in a real browser?</dt>
+    <dd>Because correctly measuring text requires real font metrics
+    (glyph widths, line heights, wrapping rules) — a substantial,
+    separate subsystem real browsers implement with actual font
+    rendering engines. This module's scope stops at block-level box
+    geometry; text/inline layout is a deliberately named gap, not an
+    oversight.</dd>
+
+    <dt>Is "auto width fills the container" true for EVERY element, or
+    just some?</dt>
+    <dd>It's the default behavior specifically for BLOCK-level elements
+    with no explicit width — which is what this module models
+    throughout. Inline elements (like a `<span>` or `<a>` in real CSS)
+    behave completely differently: they only take up as much width as
+    their own content needs, which is exactly why this module doesn't
+    attempt to model inline elements at all.</dd>
+
+    <dt>Why compute `cursor_y` by summing heights instead of, say,
+    absolute-positioning each child directly?</dt>
+    <dd>Because that summing IS what block-flow layout actually is —
+    there's no absolute coordinate system children are placed into
+    independently; each one's position is defined relative to
+    wherever the previous sibling ended. This is a faithful
+    reproduction of the real algorithm's shape, not an implementation
+    shortcut.</dd>
+
+    <dt>What would happen if a child element had a NEGATIVE margin?</dt>
+    <dd>This module's arithmetic would happily compute a wider content
+    width and (if it affected `cursor_y`) potentially overlapping
+    geometry — which matches real CSS: negative margins are a real,
+    legal, sometimes deliberately-used technique to pull elements
+    closer together or create overlap, not something CSS disallows.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    Every box now has real geometry. Module 24 turns that geometry into
+    actual pixels — and, critically, demonstrates why "paint" and
+    "composite" are two genuinely separate pipeline stages, which is
+    exactly why some CSS property changes are dramatically cheaper than
+    others.
+  </p>
+
+  <div class="module-footer">
+    <a href="../22_style_computation/tutorial.html">← Module 22: style_computation</a>
+    <a href="../24_paint_and_composite/tutorial.html">Module 24: paint_and_composite →</a>
+  </div>
+</div>
