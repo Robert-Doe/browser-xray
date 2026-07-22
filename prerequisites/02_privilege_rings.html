@@ -1,0 +1,99 @@
+<title>Prerequisite: Privilege Rings</title>
+<link rel="stylesheet" href="../assets/design-system.css">
+<style>body{--accent:#8f8f8f;--accent-dim:#3a3a3a;}</style>
+
+<div class="page">
+  <span class="module-badge">PREREQUISITE 2 / 8</span>
+  <h1>Privilege Rings (Kernel Mode vs. User Mode)</h1>
+
+  <div class="analogy-box">
+    A hotel has guest rooms and a master keycard room. Guests hold a
+    keycard that opens their own room and common areas — never the master
+    room, never anyone else's room. It doesn't matter how badly a guest
+    wants into Room 214; the card reader itself refuses the card. The
+    hardware of the lock enforces the boundary. No guest, however clever,
+    can "argue" their way past a door whose lock simply won't accept
+    their card's bits.
+  </div>
+
+  <p>
+    Your CPU has an actual hardware register — on x86-64 it's encoded in
+    the segment selector's low bits, generally referred to as the
+    <strong>Current Privilege Level (CPL)</strong> — that says what mode
+    the currently executing code is running in. Conceptually there are up
+    to four "rings" (0–3), but in practice every mainstream OS
+    (Windows, Linux, macOS) uses exactly two: <strong>Ring 0</strong>
+    (kernel mode) and <strong>Ring 3</strong> (user mode).
+  </p>
+
+  <h2 id="ring0-ring3">What Ring 0 Can Do That Ring 3 Cannot</h2>
+  <p>
+    Certain CPU instructions are defined as <strong>privileged</strong>:
+    executing them while the CPL says "Ring 3" causes an immediate
+    hardware fault — the instruction never runs. Examples: instructions
+    that change page table base registers, that mask hardware interrupts,
+    that read/write certain model-specific registers, or that halt the
+    CPU. Your browser's JavaScript, your Python script, literally every
+    line of every user-mode program you have ever written runs at Ring 3
+    and has never once executed a privileged instruction directly.
+  </p>
+
+  <h2 id="mode-bit">It's Enforced By Hardware, Not by the OS's Goodwill</h2>
+  <p>
+    This is the detail people miss: the restriction isn't a polite
+    convention the operating system asks programs to follow. It's wired
+    into the CPU. If Ring-3 code executes a privileged instruction, the
+    CPU itself raises a <strong>general protection fault</strong> before
+    a single side effect happens. The OS never has to "catch" a rule
+    violation after the fact — the hardware refuses the action outright.
+    That's what makes it a real security boundary and not a social one.
+  </p>
+
+  <div class="diagram-box">
+    <svg viewBox="0 0 640 200" xmlns="http://www.w3.org/2000/svg">
+      <style>
+        .lbl{font:12px monospace;fill:var(--fg);}
+        .dim{font:11px monospace;fill:var(--fg-dim);}
+      </style>
+      <circle cx="320" cy="100" r="90" fill="none" stroke="var(--border)"/>
+      <circle cx="320" cy="100" r="45" fill="var(--accent)" opacity="0.25" stroke="var(--accent)"/>
+      <text class="lbl" x="320" y="105" text-anchor="middle">Ring 0</text>
+      <text class="dim" x="320" y="120" text-anchor="middle">kernel</text>
+      <text class="lbl" x="320" y="35" text-anchor="middle">Ring 3</text>
+      <text class="dim" x="320" y="50" text-anchor="middle">user mode (your code)</text>
+    </svg>
+    <div class="diagram-caption">
+      Ring 3 code can only reach Ring 0 through one controlled gate: the
+      system call (see <a href="03_syscalls.html">Prerequisite 3</a>).
+      There is no direct path inward.
+    </div>
+  </div>
+
+  <h2 id="trap">The Only Way In Is a Trap</h2>
+  <p>
+    So how does user-mode code ever get the kernel to do something on its
+    behalf — open a file, allocate memory, send a network packet? It
+    executes a special instruction (on x86-64, <code>syscall</code>; the
+    older mechanism was software interrupt <code>int 0x80</code> on
+    Linux) that deliberately, safely transitions the CPU into Ring 0 at
+    one specific, kernel-controlled entry point. The kernel — not the
+    calling program — decides what happens next. This controlled
+    transition is exactly what a "system call" is, covered next.
+  </p>
+
+  <div class="callout">
+    "Administrator" or "root" is <em>not</em> the same thing as Ring 0.
+    An Administrator-owned process on Windows still runs its normal code
+    in Ring 3 — being an admin changes what the <em>kernel will permit</em>
+    when that process makes a system call, not what CPU ring the process
+    executes in. Conflating "has admin rights" with "runs in kernel mode"
+    is one of the most common wrong mental models in security discussions
+    — keep them separate.
+  </div>
+
+  <p style="margin-top:2rem;">
+    <a href="prerequisite.html">← All prerequisites</a> ·
+    Previous: <a href="01_virtual_memory.html">← Virtual Memory</a> ·
+    Next: <a href="03_syscalls.html">System Calls →</a>
+  </p>
+</div>

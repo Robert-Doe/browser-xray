@@ -1,0 +1,112 @@
+<title>Prerequisite: System Calls</title>
+<link rel="stylesheet" href="../assets/design-system.css">
+<style>body{--accent:#8f8f8f;--accent-dim:#3a3a3a;}</style>
+
+<div class="page">
+  <span class="module-badge">PREREQUISITE 3 / 8</span>
+  <h1>System Calls</h1>
+
+  <div class="analogy-box">
+    A courtroom has exactly one witness stand. Anyone who wants to submit
+    evidence doesn't walk up to the judge directly — they go through the
+    stand, state their request in a fixed, recognized format, and the
+    judge (who can see and hear every word) decides whether to allow it.
+    You cannot slip evidence to the judge by any other route. Every
+    request goes through the one visible chokepoint, which is exactly
+    what makes the courtroom auditable.
+  </div>
+
+  <p>
+    A <strong>system call (syscall)</strong> is the one sanctioned door
+    from <a href="02_privilege_rings.html">Ring 3 into Ring 0</a>. When
+    your program calls something like <code>open()</code>, <code>read()</code>,
+    or on Windows an underlying <code>NtCreateFile</code>, what actually
+    happens is: your code loads a syscall number and its arguments into
+    specific registers, executes the <code>syscall</code> instruction,
+    the CPU switches to Ring 0 at a fixed kernel entry point, and the
+    kernel's syscall dispatcher looks up that number in a table and runs
+    the matching kernel function. Control returns to Ring 3 only when the
+    kernel decides to hand it back.
+  </p>
+
+  <h2 id="syscall-boundary">Why This Boundary Matters for Security</h2>
+  <p>
+    Every single thing a process does that has an effect <em>outside</em>
+    its own private virtual address space — touching a file, opening a
+    socket, spawning another process, mapping shared memory — has to go
+    through a syscall. That means the syscall boundary is a
+    <strong>complete choke point</strong>: if you can observe, log, or
+    filter every syscall a process makes, you have complete visibility
+    and control over everything that process can do to the outside world.
+    This is precisely the leverage point Modules 3 and 10 use.
+  </p>
+
+  <h2 id="syscall-table">User-Facing Functions Are Not the Syscalls Themselves</h2>
+  <p>
+    A subtlety worth being precise about: <code>fopen()</code> in C, or
+    <code>open()</code> in Python, are <strong>library functions</strong>,
+    not syscalls. They live in Ring 3, do bookkeeping (buffering, error
+    translation), and eventually issue the real, much lower-level syscall
+    for you. On Windows the practical picture has an extra layer:
+    application code usually calls the Win32 API (e.g.
+    <code>CreateFileW</code>), which calls into <code>ntdll.dll</code>,
+    which is what actually executes the <code>syscall</code> instruction
+    down into the NT kernel. Knowing this distinction matters because
+    tracing tools operate at different layers — a Win32 API monitor and a
+    raw syscall tracer will show you related but not identical events.
+  </p>
+
+  <div class="diagram-box">
+    <svg viewBox="0 0 640 180" xmlns="http://www.w3.org/2000/svg">
+      <style>
+        .lbl{font:12px monospace;fill:var(--fg);}
+        .dim{font:11px monospace;fill:var(--fg-dim);}
+        .box{fill:var(--bg-raised);stroke:var(--border);}
+      </style>
+      <rect class="box" x="20" y="20" width="150" height="40" rx="4"/>
+      <text class="lbl" x="30" y="45">your code</text>
+      <rect class="box" x="200" y="20" width="150" height="40" rx="4"/>
+      <text class="lbl" x="210" y="45">Win32 API</text>
+      <rect class="box" x="380" y="20" width="150" height="40" rx="4"/>
+      <text class="lbl" x="390" y="45">ntdll.dll</text>
+      <rect class="box" x="470" y="110" width="150" height="40" rx="4" stroke="var(--accent)"/>
+      <text class="lbl" x="480" y="135">NT kernel</text>
+      <text class="dim" x="20" y="90">Ring 3 (all of the above)</text>
+      <text class="dim" x="470" y="90">Ring 0</text>
+      <line x1="170" y1="40" x2="200" y2="40" stroke="var(--fg-dim)"/>
+      <line x1="350" y1="40" x2="380" y2="40" stroke="var(--fg-dim)"/>
+      <line x1="455" y1="55" x2="545" y2="105" stroke="var(--accent)" stroke-width="1.5"/>
+      <text class="dim" x="470" y="80">syscall instruction</text>
+    </svg>
+    <div class="diagram-caption">
+      Everything left of the diagonal line is Ring 3, no matter how
+      "low-level" it looks. Only the final jump is the actual privilege
+      transition.
+    </div>
+  </div>
+
+  <h2 id="tracing">You Can Watch This Boundary Happen</h2>
+  <p>
+    Windows ships <strong>Process Monitor (ProcMon)</strong>, which hooks
+    the OS's own tracing facilities to show you file, registry, and
+    network operations per-process, timestamped, with the calling stack.
+    Linux has <code>strace</code>, which attaches to a process via
+    <code>ptrace</code> and prints every raw syscall with its arguments
+    and return value. Module 3 has you run one of these against a
+    trivial program and read real, captured syscall activity — not a
+    description of what syscalls "generally" happen.
+  </p>
+
+  <div class="callout">
+    ProcMon's default view is enormous — every process on the system,
+    every operation. If your capture looks empty or overwhelming, the
+    fix is almost always the filter bar (Process Name is your program),
+    not a broken installation.
+  </div>
+
+  <p style="margin-top:2rem;">
+    <a href="prerequisite.html">← All prerequisites</a> ·
+    Previous: <a href="02_privilege_rings.html">← Privilege Rings</a> ·
+    Next: <a href="04_processes_and_threads.html">Processes vs. Threads →</a>
+  </p>
+</div>

@@ -1,0 +1,297 @@
+/*
+  Shared design system for every tutorial.html / concept_*.html / prerequisite
+  page in this course. One file, imported everywhere, so the whole course
+  reads as one continuous object instead of 35 unrelated pages.
+
+  Per-module accent color is set by the PAGE, not this file: each page's
+  <body> carries a `data-accent` attribute (a hex value) and a two-line
+  inline <style> block maps it to --accent. This file only defines what
+  --accent is USED for for. See any tutorial.html <head> for the pattern.
+*/
+
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+:root {
+  --bg: #14161a;
+  --bg-raised: #1c1f25;
+  --bg-inset: #0e1013;
+  --fg: #e8e6e1;
+  --fg-dim: #9aa0a6;
+  --border: #2c3038;
+  --accent: #4fb3bf;          /* default teal — every module overrides this */
+  --accent-dim: #2c4a4d;
+  --good: #6fcf7f;
+  --bad: #e8615a;
+  --warn: #e8b34f;
+  --code-fg: #d7dbe0;
+
+  --font-head: 'Playfair Display', Georgia, 'Times New Roman', serif;
+  --font-body: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  line-height: 1.6;
+  margin: 0;
+  padding: 0 0 6rem 0;
+}
+
+.page {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-head);
+  font-weight: 700;
+  color: var(--fg);
+  letter-spacing: 0.01em;
+}
+
+h1 {
+  font-size: 2.4rem;
+  border-bottom: 3px solid var(--accent);
+  padding-bottom: 0.5rem;
+  margin-top: 0;
+}
+
+h2 {
+  font-size: 1.5rem;
+  margin-top: 3rem;
+  color: var(--accent);
+}
+h2 .num {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  color: var(--fg-dim);
+  margin-right: 0.6rem;
+}
+
+h3 { font-size: 1.15rem; color: var(--fg); }
+
+a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); }
+a:hover { border-bottom-style: solid; }
+
+code, pre, .mono { font-family: var(--font-mono); font-size: 0.92rem; color: var(--code-fg); }
+
+pre {
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 1rem 1.2rem;
+  overflow-x: auto;
+  line-height: 1.5;
+}
+code { background: var(--bg-inset); padding: 0.1rem 0.35rem; border-radius: 4px; }
+pre code { background: none; padding: 0; }
+
+/* --- module chrome: badges, prereq tag-links --- */
+
+.module-badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--bg);
+  background: var(--accent);
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-weight: 700;
+  margin-bottom: 0.8rem;
+}
+
+.tag-links { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.8rem 0 2rem 0; }
+.tag-link {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  border: 1px solid var(--accent-dim);
+  color: var(--accent);
+  padding: 0.25rem 0.7rem;
+  border-radius: 6px;
+  border-bottom: 1px solid var(--accent-dim);
+  background: var(--bg-raised);
+}
+.tag-link:hover { background: var(--accent-dim); }
+
+/* --- 01 Big Analogy --- */
+.analogy-box {
+  background: linear-gradient(135deg, var(--bg-raised), var(--bg-inset));
+  border: 1px solid var(--accent-dim);
+  border-radius: 10px;
+  padding: 1.4rem 1.6rem;
+  margin: 1.2rem 0 2rem 0;
+  position: relative;
+}
+.analogy-box::before {
+  content: "THE BIG ANALOGY";
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  color: var(--accent);
+  display: block;
+  margin-bottom: 0.6rem;
+}
+
+/* --- numbered step list --- */
+.steps { counter-reset: step; list-style: none; padding: 0; }
+.steps li {
+  counter-increment: step;
+  position: relative;
+  padding: 0.4rem 0 0.4rem 2.6rem;
+  margin-bottom: 0.6rem;
+  border-left: 2px solid var(--border);
+}
+.steps li::before {
+  content: counter(step);
+  position: absolute;
+  left: -1px;
+  top: 0.3rem;
+  width: 1.8rem;
+  height: 1.8rem;
+  background: var(--accent);
+  color: var(--bg);
+  border-radius: 50%;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateX(-50%);
+}
+
+/* --- diagram / state map box --- */
+.diagram-box {
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.2rem;
+  margin: 1rem 0;
+  overflow-x: auto;
+}
+.diagram-box svg { display: block; margin: 0 auto; max-width: 100%; }
+.diagram-caption { font-size: 0.85rem; color: var(--fg-dim); text-align: center; margin-top: 0.6rem; }
+
+/* --- compare box: Limits section --- */
+.compare-box {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 1.2rem 0;
+}
+@media (max-width: 640px) { .compare-box { grid-template-columns: 1fr; } }
+.compare-col {
+  border-radius: 8px;
+  padding: 1rem 1.2rem;
+  border: 1px solid var(--border);
+}
+.compare-col.cant { border-left: 3px solid var(--bad); }
+.compare-col.can { border-left: 3px solid var(--good); }
+.compare-col h4 { margin-top: 0; font-family: var(--font-mono); font-size: 0.85rem; letter-spacing: 0.05em; }
+.compare-col.cant h4 { color: var(--bad); }
+.compare-col.can h4 { color: var(--good); }
+.compare-col ul { padding-left: 1.2rem; margin: 0.5rem 0; }
+
+/* --- run it / troubleshooting callout --- */
+.callout {
+  border-radius: 8px;
+  padding: 1rem 1.2rem;
+  margin: 1rem 0;
+  border: 1px solid var(--warn);
+  background: rgba(232, 179, 79, 0.08);
+}
+.callout::before {
+  content: "⚠ IF YOU GET A BLANK OR BROKEN RESULT";
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  color: var(--warn);
+  margin-bottom: 0.5rem;
+}
+
+/* --- brain exercise (collapsible answer) --- */
+.brain-exercise {
+  border: 1px solid var(--accent-dim);
+  border-radius: 8px;
+  padding: 1.2rem 1.4rem;
+  margin: 1rem 0;
+}
+.brain-exercise summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+.brain-exercise .answer { margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed var(--border); }
+
+/* --- Q&A --- */
+.qa dt {
+  font-weight: 700;
+  color: var(--accent);
+  margin-top: 1.2rem;
+}
+.qa dt::before { content: "Q: "; color: var(--fg-dim); }
+.qa dd { margin-left: 0; margin-top: 0.3rem; }
+.qa dd::before { content: "A: "; color: var(--fg-dim); font-weight: 700; }
+
+/* --- decisions table --- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.92rem;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.7rem;
+  text-align: left;
+  vertical-align: top;
+}
+th { background: var(--bg-raised); font-family: var(--font-mono); font-size: 0.8rem; letter-spacing: 0.03em; }
+tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+
+.badge-forced   { color: var(--bad); font-family: var(--font-mono); font-size: 0.78rem; }
+.badge-contract { color: var(--warn); font-family: var(--font-mono); font-size: 0.78rem; }
+.badge-convention { color: var(--good); font-family: var(--font-mono); font-size: 0.78rem; }
+
+/* --- footer nav --- */
+.module-footer {
+  margin-top: 4rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+.module-footer a { border-bottom: none; }
+
+/* --- concept-connects callout (vocabulary webs) --- */
+.connects-box {
+  background: var(--bg-raised);
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+  padding: 1rem 1.2rem;
+  margin: 1.5rem 0;
+}
+.connects-box::before {
+  content: "HOW THIS CONNECTS";
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+}
+
+/* --- confused-pairs table --- */
+.confused-pair .wrong { color: var(--bad); }
+.confused-pair .right { color: var(--good); }

@@ -1,0 +1,122 @@
+<title>Prerequisite: Origins & URLs</title>
+<link rel="stylesheet" href="../assets/design-system.css">
+<style>body{--accent:#8f8f8f;--accent-dim:#3a3a3a;}</style>
+
+<div class="page">
+  <span class="module-badge">PREREQUISITE 8 / 8</span>
+  <h1>Origins &amp; URLs</h1>
+
+  <div class="analogy-box">
+    Two office buildings can sit on the exact same street, one door apart
+    — but "the same street" doesn't mean "the same security badge works
+    at both." What actually determines whether your badge works is a
+    precise triple: which building, which company owns the lease
+    (protocol/trust level), and which specific floor's access system
+    (port) you're presenting the badge to. Change any one of the three,
+    and it's a different building for badge purposes — even if a human
+    glancing at the street would call it "basically the same place."
+  </div>
+
+  <p>
+    Every URL decomposes into named parts, and the web platform's entire
+    security model is built on exactly three of them, together called
+    the <strong>origin</strong>:
+  </p>
+
+  <div class="diagram-box">
+    <svg viewBox="0 0 640 130" xmlns="http://www.w3.org/2000/svg">
+      <style>
+        .lbl{font:13px monospace;fill:var(--fg);}
+        .tag{font:11px monospace;fill:var(--accent);}
+      </style>
+      <text class="lbl" x="20" y="40">https</text><text class="lbl" x="70" y="40">://</text>
+      <text class="lbl" x="95" y="40">accounts.example.com</text>
+      <text class="lbl" x="330" y="40">:</text>
+      <text class="lbl" x="340" y="40">443</text>
+      <text class="lbl" x="380" y="40">/settings?tab=security</text>
+
+      <text class="tag" x="20" y="70">scheme</text>
+      <text class="tag" x="95" y="70">host</text>
+      <text class="tag" x="340" y="70">port</text>
+      <text class="tag" x="380" y="70">path + query — NOT part of the origin</text>
+
+      <rect x="12" y="20" width="70" height="22" fill="none" stroke="var(--accent)"/>
+      <rect x="88" y="20" width="240" height="22" fill="none" stroke="var(--accent)"/>
+      <rect x="332" y="20" width="55" height="22" fill="none" stroke="var(--accent)"/>
+    </svg>
+    <div class="diagram-caption">
+      Origin = (scheme, host, port). Everything after the port —
+      path, query string, fragment — is irrelevant to origin comparison.
+    </div>
+  </div>
+
+  <h2 id="url-anatomy">The Parts, Precisely</h2>
+  <ul>
+    <li><strong>Scheme:</strong> <code>https</code> vs. <code>http</code>
+    are <em>different origins</em> — the trust level (encrypted +
+    authenticated vs. not) is part of the identity, not a detail.</li>
+    <li><strong>Host:</strong> the exact hostname. <code>example.com</code>
+    and <code>accounts.example.com</code> are different hosts — a
+    subdomain is not automatically "the same site" for origin purposes
+    (it can be, deliberately, for the narrower "site" concept — see
+    below).</li>
+    <li><strong>Port:</strong> <code>example.com:443</code> and
+    <code>example.com:8080</code> are different origins, even on the
+    identical host, identical scheme.</li>
+  </ul>
+
+  <h2 id="origin-tuple">Why the Browser Defines Identity This Way</h2>
+  <p>
+    The origin tuple isn't an arbitrary convention — it's chosen because
+    each piece maps to a genuinely different real-world trust boundary:
+    scheme maps to "was this connection encrypted/authenticated at all,"
+    host maps to "who actually controls the DNS name and the TLS
+    certificate for it," and port maps to "which specific listening
+    service on that host." Two origins differing in any one of the three
+    can be run by completely different, mutually untrusting parties, so
+    the browser treats them as such by default — that default is the
+    <a href="../track2-applied-layer/phase5_networking/17_origin_model_sop/tutorial.html">Same-Origin
+    Policy</a> (Module 17).
+  </p>
+
+  <h2 id="same-origin-same-site">"Same-Origin" vs. "Same-Site" — Not the Same Idea</h2>
+  <p>
+    Two terms that get conflated constantly, so pin them down now:
+  </p>
+  <ul>
+    <li><strong>Same-origin:</strong> scheme, host, and port all match,
+    exactly. <code>https://a.example.com</code> and
+    <code>https://b.example.com</code> are <em>not</em> same-origin
+    (different hosts).</li>
+    <li><strong>Same-site:</strong> a looser, cookie-relevant notion —
+    roughly, the registrable domain matches (using the Public Suffix
+    List to know where "the site" actually ends, e.g. that
+    <code>.co.uk</code> isn't itself a registrable suffix). Under
+    same-site, <code>https://a.example.com</code> and
+    <code>https://b.example.com</code> <em>are</em> considered the same
+    site, because they share the registrable domain
+    <code>example.com</code>.</li>
+  </ul>
+  <p>
+    Same-origin is the stricter check used by the Same-Origin Policy for
+    script/DOM/fetch access. Same-site is the looser check used by
+    cookie <code>SameSite</code> attributes (Module 29). Mixing these two
+    up is one of the most common terminology errors in web security
+    discussions — a full vocabulary-web page on this exact confusion
+    lives alongside Module 29 once it's built.
+  </p>
+
+  <div class="callout">
+    <code>http://example.com</code> and <code>https://example.com</code>
+    look almost identical to a human skimming a URL bar, but they are
+    different origins by definition. If a demo shows an SOP violation
+    "unexpectedly" succeeding or failing, check the scheme first — it's
+    the part people's eyes skip over.
+  </div>
+
+  <p style="margin-top:2rem;">
+    <a href="prerequisite.html">← All prerequisites</a> ·
+    Previous: <a href="07_ipc_channels.html">← IPC Channels</a> ·
+    This is the last prerequisite — you're ready for Module 1.
+  </p>
+</div>

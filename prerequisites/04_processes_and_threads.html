@@ -1,0 +1,115 @@
+<title>Prerequisite: Processes vs. Threads</title>
+<link rel="stylesheet" href="../assets/design-system.css">
+<style>body{--accent:#8f8f8f;--accent-dim:#3a3a3a;}</style>
+
+<div class="page">
+  <span class="module-badge">PREREQUISITE 4 / 8</span>
+  <h1>Processes vs. Threads</h1>
+
+  <div class="analogy-box">
+    A process is a whole house: its own address, its own locked front
+    door, its own utilities, its own mail. A thread is a person living
+    inside that house. A house can have several people living in it
+    (multiple threads), and they freely share the fridge, the living
+    room, the same front-door key (the process's memory, file handles,
+    address space) — but a person from House A cannot casually stroll
+    into House B's kitchen. They live at a different address, and its
+    door doesn't recognize their key.
+  </div>
+
+  <p>
+    A <strong>process</strong> is the OS's unit of <em>isolation</em>: it
+    owns one <a href="01_virtual_memory.html#address-space">virtual
+    address space</a>, one set of <a href="05_handles_and_fds.html">open
+    handles</a>, and is described in the kernel by a data structure
+    (Windows calls it an <code>EPROCESS</code>; Linux calls it a
+    <code>task_struct</code> conceptually grouped under a thread group).
+  </p>
+  <p>
+    A <strong>thread</strong> is the OS's unit of <em>execution</em>: it's
+    a sequence of instructions being run, with its own CPU register state
+    and its own stack — but every thread inside a process shares that
+    process's one address space and one set of handles.
+  </p>
+
+  <h2 id="process-definition">Why This Split Exists</h2>
+  <p>
+    If isolation and execution were the same unit, you couldn't have
+    concurrency without paying the full cost of isolation for every
+    concurrent task, and you couldn't share memory between cooperating
+    tasks without breaking isolation entirely. Splitting them lets an OS
+    offer both: cheap, fast, shared-memory concurrency <em>within</em> a
+    process via threads, and expensive, hard isolation <em>between</em>
+    processes.
+  </p>
+
+  <div class="diagram-box">
+    <svg viewBox="0 0 640 220" xmlns="http://www.w3.org/2000/svg">
+      <style>
+        .lbl{font:12px monospace;fill:var(--fg);}
+        .dim{font:11px monospace;fill:var(--fg-dim);}
+        .box{fill:var(--bg-raised);stroke:var(--border);}
+        .thr{fill:var(--bg-inset);stroke:var(--accent);}
+      </style>
+      <rect class="box" x="30" y="20" width="260" height="180" rx="8"/>
+      <text class="lbl" x="45" y="42">Process A (one address space)</text>
+      <rect class="thr" x="50" y="60" width="90" height="50" rx="4"/>
+      <text class="dim" x="60" y="90">Thread 1</text>
+      <rect class="thr" x="170" y="60" width="90" height="50" rx="4"/>
+      <text class="dim" x="180" y="90">Thread 2</text>
+      <text class="dim" x="50" y="150">shared heap, shared handles,</text>
+      <text class="dim" x="50" y="165">shared globals — all threads</text>
+      <text class="dim" x="50" y="180">see the same memory</text>
+
+      <rect class="box" x="350" y="20" width="260" height="180" rx="8"/>
+      <text class="lbl" x="365" y="42">Process B (a different address space)</text>
+      <rect class="thr" x="370" y="60" width="90" height="50" rx="4"/>
+      <text class="dim" x="380" y="90">Thread 1</text>
+      <text class="dim" x="370" y="150">cannot see Process A's</text>
+      <text class="dim" x="370" y="165">memory at all — different</text>
+      <text class="dim" x="370" y="180">page tables entirely</text>
+    </svg>
+    <div class="diagram-caption">
+      Threads inside a process share everything. Processes share nothing
+      unless they explicitly set up an <a href="07_ipc_channels.html">IPC channel</a>.
+    </div>
+  </div>
+
+  <h2 id="pcb">The Process Control Block (PCB)</h2>
+  <p>
+    The kernel tracks each process via a control block holding: its
+    process ID, its page table root, its open handle table, its security
+    context (token, on Windows), and pointers to its threads. This is
+    kernel memory — a user-mode process cannot read or forge its own PCB
+    directly; it can only query pieces of it through syscalls (e.g.
+    <code>OpenProcess</code> + query functions on Windows). Module 4 has
+    you inspect a real process's structure this way.
+  </p>
+
+  <h2 id="context-switch">Context Switching Is Expensive Precisely Because Processes Isolate</h2>
+  <p>
+    Switching the CPU from running one thread to running a thread in a
+    <em>different process</em> requires reloading the page table base
+    register — flushing the CPU's address-translation cache (the TLB) in
+    the process. Switching between two threads of the <em>same</em>
+    process needs none of that, because the address space doesn't
+    change. This is a real, measurable cost, and it's part of why a
+    multi-process browser architecture (many renderer processes) is more
+    expensive than a multi-threaded one — and exactly the tradeoff
+    Chromium made deliberately for security (Module 11).
+  </p>
+
+  <div class="callout">
+    "Multithreaded" and "multiprocess" solve different problems and are
+    not interchangeable safety mechanisms. A bug in one thread can still
+    corrupt another thread's data in the same process, because they
+    share memory. Only process boundaries give you the hard isolation
+    this course's security modules rely on.
+  </div>
+
+  <p style="margin-top:2rem;">
+    <a href="prerequisite.html">← All prerequisites</a> ·
+    Previous: <a href="03_syscalls.html">← System Calls</a> ·
+    Next: <a href="05_handles_and_fds.html">Handles &amp; File Descriptors →</a>
+  </p>
+</div>

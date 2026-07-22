@@ -1,0 +1,115 @@
+<title>Prerequisite: Bytes, Hex, and Endianness</title>
+<link rel="stylesheet" href="../assets/design-system.css">
+<style>body{--accent:#8f8f8f;--accent-dim:#3a3a3a;}</style>
+
+<div class="page">
+  <span class="module-badge">PREREQUISITE 6 / 8</span>
+  <h1>Bytes, Hex, and Endianness</h1>
+
+  <div class="analogy-box">
+    Say you write the number "one thousand two hundred thirty-four" on
+    index cards, one digit per card: 1, 2, 3, 4. Now imagine two
+    librarians filing multi-card numbers on a shelf. Librarian A always
+    files the <em>most significant</em> card first (the way you read it:
+    1-2-3-4). Librarian B always files the <em>least significant</em>
+    card first (4-3-2-1) because their filing convention finds it easier
+    to grab the "ones" card quickest. Both librarians agree perfectly on
+    what number is stored — but if you peek at Librarian B's shelf
+    expecting Librarian A's order, you'll misread 1234 as 4321. Neither
+    is "wrong." They're different, mutually understood conventions, and
+    you have to know which one you're looking at.
+  </div>
+
+  <p>
+    A <strong>byte</strong> is 8 bits, and its value is almost always
+    written in <strong>hexadecimal (base 16)</strong> because it maps
+    perfectly: one hex digit = 4 bits, so a byte is always exactly two
+    hex digits, from <code>0x00</code> to <code>0xFF</code>. This isn't
+    a stylistic choice — decimal doesn't divide evenly into bit groups,
+    hex does, which is why every memory dump, every protocol spec, every
+    debugger you'll ever use shows hex, not decimal.
+  </p>
+
+  <h2 id="hex-literacy">Reading Hex Fluently</h2>
+  <p>
+    You don't need to convert hex to decimal in your head to be fluent —
+    you need pattern recognition. <code>0x00</code> is all-zero bits.
+    <code>0xFF</code> is all-one bits (a full byte). <code>0x7F</code> is
+    the largest positive value a signed byte can hold (0111 1111) —
+    <code>0x80</code> flips the sign bit and becomes the most negative
+    value in two's-complement. Addresses are typically shown as 8 or 16
+    hex digits (32-bit or 64-bit). None of this needs memorizing tables —
+    it needs enough repeated exposure (which the modules provide) that
+    the shapes become familiar the way word shapes are to a fluent reader.
+  </p>
+
+  <h2 id="endianness">Endianness: The Order Multi-Byte Values Are Stored In</h2>
+  <p>
+    A single byte has no ordering ambiguity. But a 4-byte integer, like
+    the value 1 stored as a 32-bit int, occupies four consecutive memory
+    addresses — and there are two competing conventions for which byte
+    goes first:
+  </p>
+  <ul>
+    <li><strong>Little-endian:</strong> least-significant byte at the
+    lowest address. The value <code>1</code> as a 32-bit int is stored
+    as bytes <code>01 00 00 00</code>. This is what x86 and x86-64 CPUs
+    use — meaning it's what your own machine uses natively.</li>
+    <li><strong>Big-endian:</strong> most-significant byte at the lowest
+    address. The value <code>1</code> is stored as <code>00 00 00 01</code>.
+    This is what network protocols conventionally use — often called
+    <strong>"network byte order."</strong></li>
+  </ul>
+
+  <div class="diagram-box">
+    <svg viewBox="0 0 640 160" xmlns="http://www.w3.org/2000/svg">
+      <style>
+        .lbl{font:12px monospace;fill:var(--fg);}
+        .dim{font:11px monospace;fill:var(--fg-dim);}
+        .b{fill:var(--bg-raised);stroke:var(--border);}
+      </style>
+      <text class="lbl" x="20" y="25">Value: 0x000001A4 (420 decimal), little-endian (your CPU, native)</text>
+      <rect class="b" x="20" y="35" width="60" height="35"/><text class="dim" x="35" y="57">A4</text>
+      <rect class="b" x="85" y="35" width="60" height="35"/><text class="dim" x="100" y="57">01</text>
+      <rect class="b" x="150" y="35" width="60" height="35"/><text class="dim" x="165" y="57">00</text>
+      <rect class="b" x="215" y="35" width="60" height="35"/><text class="dim" x="230" y="57">00</text>
+
+      <text class="lbl" x="20" y="105">Same value, big-endian (network byte order, TLS/DNS/TCP headers)</text>
+      <rect class="b" x="20" y="115" width="60" height="35"/><text class="dim" x="35" y="137">00</text>
+      <rect class="b" x="85" y="115" width="60" height="35"/><text class="dim" x="100" y="137">00</text>
+      <rect class="b" x="150" y="115" width="60" height="35"/><text class="dim" x="165" y="137">01</text>
+      <rect class="b" x="215" y="115" width="60" height="35"/><text class="dim" x="230" y="137">A4</text>
+    </svg>
+    <div class="diagram-caption">
+      Identical value, two byte orders. If Module 15 or 19 shows you a
+      hex dump that looks "backwards," check which convention applies.
+    </div>
+  </div>
+
+  <h2 id="reading-a-dump">Why This Matters for This Course Specifically</h2>
+  <p>
+    Module 15 has you read real bytes off a live TCP/TLS handshake, and
+    protocol headers (IP, TCP, DNS) are defined in network byte order
+    (big-endian), while any address you print from Python or the
+    debugger on your own x86-64 machine is little-endian. Getting this
+    backwards is the single most common reason a "the byte values don't
+    match what I expected" confusion happens — and it's never a bug in
+    the demo, it's a byte-order mismatch in your own reading.
+  </p>
+
+  <div class="callout">
+    Python's <code>struct</code> module makes this explicit rather than
+    implicit: <code>struct.pack('&lt;I', x)</code> forces little-endian,
+    <code>struct.pack('&gt;I', x)</code> forces big-endian (the
+    <code>!</code> format character is a synonym for network/big-endian).
+    When a module's code uses one of these, that's not an arbitrary
+    choice — it's dictated by whichever spec (a wire protocol vs. your
+    own CPU's native layout) that byte sequence has to match.
+  </div>
+
+  <p style="margin-top:2rem;">
+    <a href="prerequisite.html">← All prerequisites</a> ·
+    Previous: <a href="05_handles_and_fds.html">← Handles &amp; File Descriptors</a> ·
+    Next: <a href="07_ipc_channels.html">IPC Channels →</a>
+  </p>
+</div>

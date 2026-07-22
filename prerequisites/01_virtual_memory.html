@@ -1,0 +1,124 @@
+<title>Prerequisite: Virtual Memory & Address Spaces</title>
+<link rel="stylesheet" href="../assets/design-system.css">
+<style>body{--accent:#8f8f8f;--accent-dim:#3a3a3a;}</style>
+
+<div class="page">
+  <span class="module-badge">PREREQUISITE 1 / 8</span>
+  <h1>Virtual Memory &amp; Address Spaces</h1>
+
+  <div class="analogy-box">
+    Imagine an apartment building where every tenant is handed a floor plan
+    that says "your apartment is Room 100." All of them. Every tenant's
+    floor plan says Room 100. Nobody's lying — the building
+    superintendent (the OS + the CPU's memory management unit) privately
+    maps each tenant's "Room 100" onto a <em>different real room</em> in
+    the actual building, and swaps the mapping whenever needed. No tenant
+    can even directly address the real room number. They only ever see
+    their own private floor plan.
+  </div>
+
+  <p>
+    That's virtual memory. Every process gets its own <strong>virtual
+    address space</strong> — a full, private range of addresses (on a
+    64-bit OS, conceptually up to 2⁶⁴ of them) that it treats as if it
+    owns the whole thing. When your code reads or writes address
+    <code>0x00007FF6A2C31000</code>, that number is never a physical RAM
+    location. It's a request the CPU hands to a piece of hardware called
+    the <strong>MMU (Memory Management Unit)</strong>, which walks
+    <strong>page tables</strong> — maintained per-process by the OS — to
+    translate it into a real physical address, or faults if there's no
+    valid mapping.
+  </p>
+
+  <h2 id="address-space">The Address Space Is the Unit of Isolation</h2>
+  <p>
+    This is the single fact this whole course leans on hardest: two
+    processes can use the identical virtual address and touch completely
+    different physical memory, because each process has its own page
+    tables. That's <em>why</em> a compromised process can't just "read
+    across" into another process's memory by guessing an address — the
+    hardware itself has no path from one process's page tables into
+    another's. (Modules 5 and 11 make you watch this happen directly.)
+  </p>
+
+  <div class="diagram-box">
+    <svg viewBox="0 0 640 220" xmlns="http://www.w3.org/2000/svg">
+      <style>
+        .lbl{font:12px monospace;fill:var(--fg);}
+        .dim{font:11px monospace;fill:var(--fg-dim);}
+        .box{fill:var(--bg-raised);stroke:var(--border);}
+      </style>
+      <rect class="box" x="20" y="20" width="220" height="80" rx="6"/>
+      <text class="lbl" x="30" y="40">Process A</text>
+      <text class="dim" x="30" y="60">virtual 0x1000 —</text>
+      <rect class="box" x="20" y="120" width="220" height="80" rx="6"/>
+      <text class="lbl" x="30" y="140">Process B</text>
+      <text class="dim" x="30" y="160">virtual 0x1000 —</text>
+
+      <rect class="box" x="420" y="70" width="200" height="80" rx="6" stroke="var(--accent)"/>
+      <text class="lbl" x="430" y="90">Physical RAM</text>
+      <text class="dim" x="430" y="110">page @ 0x7f3200</text>
+      <text class="dim" x="430" y="128">page @ 0x9ac100</text>
+
+      <line x1="240" y1="60" x2="420" y2="95" stroke="var(--accent)" stroke-width="1.5"/>
+      <line x1="240" y1="160" x2="420" y2="125" stroke="var(--accent)" stroke-width="1.5"/>
+      <text class="dim" x="270" y="95">MMU + page tables</text>
+    </svg>
+    <div class="diagram-caption">
+      Same virtual address (0x1000), two different processes, two
+      different — and mutually invisible — physical pages.
+    </div>
+  </div>
+
+  <h2 id="paging">Pages, and Why Memory Comes in Fixed Chunks</h2>
+  <p>
+    The OS doesn't map memory one byte at a time — that would need an
+    absurd amount of bookkeeping. It maps in fixed-size chunks called
+    <strong>pages</strong> (4 KB is the classic default on both Windows
+    and Linux on x86-64). A page table entry says "this virtual page maps
+    to this physical page" <em>and</em> carries permission bits alongside
+    that mapping: <strong>readable</strong>, <strong>writable</strong>,
+    <strong>executable</strong>. Those three bits, per page, are the
+    entire hardware foundation of DEP/NX (Module 13) — the CPU will
+    physically refuse to execute a page whose executable bit is off, no
+    matter what's in it.
+  </p>
+
+  <h2 id="kernel-vs-user-space">Kernel Space Lives in the Same Address Space, Just Locked</h2>
+  <p>
+    A common misconception: that the kernel is "somewhere else." On most
+    systems, the kernel's code and data are mapped into the <em>same</em>
+    virtual address space as every user process, in a high region of the
+    address range — it's just marked so that only privileged (ring 0)
+    code can touch it. Your process can't read kernel memory not because
+    it's in a different universe, but because the page table entries for
+    that region are flagged supervisor-only, and the CPU enforces that
+    flag on every single memory access. (This connects directly to
+    <a href="02_privilege_rings.html">Privilege Rings</a>.)
+  </p>
+
+  <h2 id="aslr">ASLR: Randomizing Where Things Land</h2>
+  <p>
+    If your program's stack, heap, and loaded libraries landed at the
+    exact same virtual addresses on every run, an attacker who found one
+    exploitable bug could hard-code every address they need. <strong>ASLR
+    (Address Space Layout Randomization)</strong> randomizes the base
+    addresses of these regions each time a process starts, so a memory
+    corruption bug alone isn't enough — the attacker also needs to learn
+    where things actually landed <em>this run</em>. Module 12 has you
+    watch ASLR do exactly this, then watch a single info-leak undo it.
+  </p>
+
+  <div class="callout">
+    If two runs of the same program print <em>different</em> addresses
+    for the same variable, that's not a bug in the demo — that's ASLR
+    working correctly. If you need reproducible addresses for teaching
+    purposes, that's a deliberate flag to disable ASLR for that one run,
+    never assume it's "normally off."
+  </div>
+
+  <p style="margin-top:2rem;">
+    <a href="prerequisite.html">← All prerequisites</a> ·
+    Next: <a href="02_privilege_rings.html">Privilege Rings →</a>
+  </p>
+</div>

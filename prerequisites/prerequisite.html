@@ -1,0 +1,95 @@
+<title>Prerequisites — The Browser Architecture X-Ray Course</title>
+<link rel="stylesheet" href="../assets/design-system.css">
+<style>body{--accent:#8f8f8f;--accent-dim:#3a3a3a;}</style>
+
+<div class="page">
+  <span class="module-badge">PREREQUISITES</span>
+  <h1>The Eight Things Every Module Assumes You Know</h1>
+
+  <p>
+    Every module in this course links back to <em>specific sections</em> of
+    these eight pages instead of re-explaining them. That's deliberate: if
+    a module's tutorial keeps re-teaching "what a process is," you can never
+    tell what that module <em>actually</em> adds. Learn these eight ideas
+    once, here, and every module afterward is free to spend 100% of its
+    words on the one new thing it proves.
+  </p>
+
+  <p>
+    These are not "browser" concepts. They're OS/systems concepts that
+    happen to be the floor the entire browser security model stands on.
+    If you already know some of these cold, skim them anyway once — the
+    anchors (<code>#section-name</code>) are what later modules actually
+    link to, so it's worth knowing where things live.
+  </p>
+
+  <h2><span class="num">1</span>Virtual Memory &amp; Address Spaces</h2>
+  <p>
+    Why a "memory address" your program prints is a lie every single
+    process gets told, on purpose. Feeds directly into Modules 1, 5, 11,
+    12, 13, 14.
+  </p>
+  <p><a href="01_virtual_memory.html">→ Read: Virtual Memory &amp; Address Spaces</a></p>
+
+  <h2><span class="num">2</span>Privilege Rings (Kernel Mode vs. User Mode)</h2>
+  <p>
+    Why your code is never really "in charge" of the hardware, and who is.
+    Feeds directly into Modules 2, 9, 10.
+  </p>
+  <p><a href="02_privilege_rings.html">→ Read: Privilege Rings</a></p>
+
+  <h2><span class="num">3</span>System Calls</h2>
+  <p>
+    The one legal door between user mode and kernel mode — and therefore
+    the one place you can stand to watch, filter, or block anything a
+    process tries to do to the outside world. Feeds directly into Modules
+    3, 9, 10, 15.
+  </p>
+  <p><a href="03_syscalls.html">→ Read: System Calls</a></p>
+
+  <h2><span class="num">4</span>Processes vs. Threads</h2>
+  <p>
+    The distinction that the entire multi-process browser security model
+    (Site Isolation, sandboxing) is built on top of. Get this wrong and
+    every later module misleads you. Feeds directly into Modules 4, 5, 8, 11.
+  </p>
+  <p><a href="04_processes_and_threads.html">→ Read: Processes vs. Threads</a></p>
+
+  <h2><span class="num">5</span>Handles &amp; File Descriptors</h2>
+  <p>
+    Why "everything is a handle" on Windows (and "everything is a file" on
+    POSIX) — the abstraction that lets an OS revoke or restrict access to
+    anything a process touches. Feeds directly into Modules 6, 7, 9, 10.
+  </p>
+  <p><a href="05_handles_and_fds.html">→ Read: Handles &amp; File Descriptors</a></p>
+
+  <h2><span class="num">6</span>Bytes, Hex, and Endianness</h2>
+  <p>
+    The literacy you need to read a memory dump or a packet capture without
+    flinching. Feeds directly into Modules 1, 15, 16, 19.
+  </p>
+  <p><a href="06_bytes_hex_endianness.html">→ Read: Bytes, Hex, and Endianness</a></p>
+
+  <h2><span class="num">7</span>IPC Channels (the general idea)</h2>
+  <p>
+    Before pipes, sockets, or Mojo: the one abstract idea that two isolated
+    things can only talk if they <em>both</em> deliberately open a channel.
+    Feeds directly into Modules 6, 7, 8, and every "process talks to
+    process" moment in Track 2.
+  </p>
+  <p><a href="07_ipc_channels.html">→ Read: IPC Channels</a></p>
+
+  <h2><span class="num">8</span>Origins &amp; URLs</h2>
+  <p>
+    The exact, boring, precise definition of "origin" that the entire web
+    security model (SOP, CORS, cookies, CSP) is a set of rules <em>about</em>.
+    Feeds directly into Modules 17, 18, 29, 30, 31, 32, 33, 34.
+  </p>
+  <p><a href="08_origins_and_urls.html">→ Read: Origins &amp; URLs</a></p>
+
+  <div class="callout" style="margin-top:3rem;">
+    Don't try to memorize these in one sitting. Read one, then go start
+    the module that cites it — the module is where the idea actually
+    becomes useful, which is when it sticks.
+  </div>
+</div>

@@ -1,0 +1,118 @@
+<title>Prerequisite: IPC Channels</title>
+<link rel="stylesheet" href="../assets/design-system.css">
+<style>body{--accent:#8f8f8f;--accent-dim:#3a3a3a;}</style>
+
+<div class="page">
+  <span class="module-badge">PREREQUISITE 7 / 8</span>
+  <h1>IPC Channels (the general idea)</h1>
+
+  <div class="analogy-box">
+    Two soundproofed rooms, no doors, no windows. The only way anyone in
+    Room A can get information to Room B is if someone, in advance,
+    installs a phone line between them — and both rooms have to agree on
+    it: A has to pick up and dial, B has to be listening on the other
+    end. Once installed, the phone line does not let Room A wander
+    around Room B's furniture. It only carries what gets deliberately
+    said down the line, in whatever format both sides agreed to speak.
+  </div>
+
+  <p>
+    <a href="01_virtual_memory.html#address-space">Two processes cannot
+    see each other's memory</a> — that's the entire point of process
+    isolation. So the only way two processes can exchange information at
+    all is <strong>Inter-Process Communication (IPC)</strong>: a
+    deliberately established channel, set up through the kernel, that
+    both sides opted into. There is no "default" channel. Silence is the
+    default; a channel is always a specific, constructed exception to it.
+  </p>
+
+  <h2 id="channel-definition">Every IPC Mechanism Is a Variation on One Idea</h2>
+  <p>
+    Whatever the mechanism — a pipe, a socket, a memory-mapped file, a
+    Windows named event, Chromium's own Mojo IPC layer — the shared shape
+    is always: <em>the kernel mediates a channel that both processes
+    explicitly hold a handle to</em>. The differences are about
+    <strong>how data crosses</strong>:
+  </p>
+  <ul>
+    <li><strong>Message passing</strong> (pipes, sockets, Mojo messages):
+    one side writes a chunk of bytes, the kernel copies or queues it, the
+    other side reads it. No memory is actually shared — data is copied
+    across the boundary.</li>
+    <li><strong>Shared memory</strong> (memory-mapped files/sections):
+    both processes map the <em>same physical pages</em> into their own
+    address spaces, so writes by one are immediately visible to the
+    other with no copy — but now both sides need their own agreed-upon
+    synchronization (locks, atomics) since there's no message ordering to
+    rely on.</li>
+  </ul>
+
+  <div class="diagram-box">
+    <svg viewBox="0 0 640 220" xmlns="http://www.w3.org/2000/svg">
+      <style>
+        .lbl{font:12px monospace;fill:var(--fg);}
+        .dim{font:11px monospace;fill:var(--fg-dim);}
+        .box{fill:var(--bg-raised);stroke:var(--border);}
+      </style>
+      <rect class="box" x="20" y="20" width="180" height="80" rx="6"/>
+      <text class="lbl" x="30" y="45">Process A</text>
+      <rect class="box" x="440" y="20" width="180" height="80" rx="6"/>
+      <text class="lbl" x="450" y="45">Process B</text>
+      <rect class="box" x="230" y="35" width="180" height="50" rx="6" stroke="var(--accent)"/>
+      <text class="dim" x="245" y="65">kernel-mediated channel</text>
+      <line x1="200" y1="60" x2="230" y2="60" stroke="var(--accent)" stroke-width="1.5"/>
+      <line x1="410" y1="60" x2="440" y2="60" stroke="var(--accent)" stroke-width="1.5"/>
+
+      <text class="dim" x="20" y="140">No channel = no path at all.</text>
+      <text class="dim" x="20" y="160">Not "hard to reach" — zero route.</text>
+      <text class="dim" x="20" y="180">The MMU (Prereq 1) guarantees this.</text>
+    </svg>
+    <div class="diagram-caption">
+      Whatever sits in the middle box (pipe, socket, shared segment,
+      Mojo) — it exists only because both ends explicitly built it.
+    </div>
+  </div>
+
+  <h2 id="kernel-mediation">Why "Kernel-Mediated" Is the Important Word</h2>
+  <p>
+    Because the channel is set up through <a href="03_syscalls.html">syscalls</a>
+    and represented by <a href="05_handles_and_fds.html">kernel-tracked
+    handles</a>, the kernel can see, filter, or refuse it — the same way
+    it can filter any other syscall. A sandboxing policy (Module 10) can
+    say "this process may write to its one designated pipe handle but
+    may not create new sockets" — and that's enforceable precisely
+    because every channel-creation and every send/receive operation
+    passes back through the syscall boundary where a policy can intercept
+    it.
+  </p>
+
+  <h2 id="shared-vs-message-passing">Why the Toy Browser Uses Message Passing, Not Shared Memory</h2>
+  <p>
+    Module 8 builds the Browser Process ↔ Renderer Process link as
+    message passing (a socket), not shared memory — and that's not
+    arbitrary. Message passing means the Browser Process's own memory is
+    never mapped into the Renderer Process at all; the Renderer literally
+    cannot read Browser-process memory through the channel even if it
+    tries, because no address the Renderer holds refers to any of it.
+    Real Chromium uses exactly this reasoning for its Mojo IPC boundary
+    between the privileged Browser Process and the sandboxed, less
+    trusted Renderer Process — sharing memory across that specific trust
+    boundary would undercut the isolation the two-process split exists
+    to provide.
+  </p>
+
+  <div class="callout">
+    "IPC" is not one specific API — it's a category. If a module or a
+    conversation says "they communicate via IPC" without naming the
+    actual mechanism (pipe? socket? shared memory? Mojo?), that's an
+    incomplete claim — always ask which variant, since the security
+    properties differ meaningfully between message passing and shared
+    memory.
+  </div>
+
+  <p style="margin-top:2rem;">
+    <a href="prerequisite.html">← All prerequisites</a> ·
+    Previous: <a href="06_bytes_hex_endianness.html">← Bytes, Hex, and Endianness</a> ·
+    Next: <a href="08_origins_and_urls.html">Origins &amp; URLs →</a>
+  </p>
+</div>
