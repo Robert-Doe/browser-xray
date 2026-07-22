@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+venv/
+.venv/
+
+# C build artifacts
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.out
+*.bin
+*.img
+build/
+
+# Editors / tooling
+.idea/
+.vscode/
+.claude/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+nul
+
+# Logs
+*.log
