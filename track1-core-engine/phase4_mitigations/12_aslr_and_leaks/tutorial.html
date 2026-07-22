@@ -1,0 +1,215 @@
+<title>Module 12: aslr_and_leaks — One Leaked Address Undoes Everything</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#d4553c;--accent-dim:#451e14;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 1 · PHASE 4 · MODULE 12</span>
+  <h1>aslr_and_leaks</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: ASLR raises the cost of an exploit by making addresses
+    unpredictable across runs — and proves that a single real
+    information leak removes that protection completely, instantly,
+    because everything else is a fixed, learnable offset away.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../../../prerequisites/01_virtual_memory.html#aslr">ASLR</a>
+    <a class="tag-link" href="../../phase1_bare_metal/01_mem_addressing/tutorial.html">Module 1: mem_addressing</a>
+    <a class="tag-link" href="../../phase3_sandboxing/11_site_isolation_model/tutorial.html">Module 11: site_isolation_model</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A bank vault's location within a large, windowless building changes
+    every single day — reception is at a new, randomly chosen spot each
+    morning too, but critically, the vault is ALWAYS exactly 47 doors
+    down the hall from reception, every day, without exception, because
+    that's just how the building's floor plan works. Not knowing where
+    reception is today makes the vault effectively unfindable. But the
+    instant someone glimpses today's reception desk — even by accident,
+    even just a glance through a window — the "47 doors down" rule
+    they memorized years ago hands them the vault immediately. The
+    daily reshuffling was real security, right up until one glimpse.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>A "vulnerable" toy program allocates memory at an address
+    Windows chooses (ASLR active), writes a secret at a fixed distance
+    from that base, and — due to a simulated bug — prints the base
+    address as a "diagnostic pointer" (but never the secret's address
+    directly).</li>
+    <li>We run this program once, note its address, and let it exit —
+    standing in for "an address an attacker learned at some point in
+    the past."</li>
+    <li>We run it again, fresh — a new process, a new ASLR-randomized
+    base address, kept alive this time.</li>
+    <li><strong>Part A</strong>: the attacker tries the OLD run's
+    address plus the known fixed offset, against the NEW run's live
+    process.</li>
+    <li>It fails — that address isn't even validly mapped in the new
+    process.</li>
+    <li><strong>Part B</strong>: the attacker tries the SAME formula,
+    using the NEW run's own, freshly leaked address.</li>
+    <li>It succeeds immediately — the exact secret comes back.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>[reference run] diagnostic pointer was 0x2746CA00000 (this process has now exited)
+[live target] PID=32352, THIS run's real diagnostic pointer=0x21893320000
+
+--- Part A (STALE address from a previous run): guessing secret at 0x2746CA02000 ---
+[attacker] tried 0x2746CA02000 -- ReadProcessMemory FAILED (GetLastError=299); likely unmapped memory
+
+--- Part B (FRESH address, leaked from THIS run): guessing secret at 0x21893322000 ---
+[attacker] tried 0x21893322000 -- read succeeded: b'REAL_SECRET_PAYLOAD_FOUND_ME\x00\x00\x00\x00'
+[attacker] landed on the real secret? True</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output. Same formula, same offset — the stale base
+    failed outright, the fresh leaked base worked on the first try.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>secret_address = base + SECRET_OFFSET
+ctypes.memmove(secret_address, SECRET_VALUE, len(SECRET_VALUE))
+...
+print(f"DIAGNOSTIC_POINTER=0x{base:X}")   # the bug: reveals `base`, never `secret_address`</code></pre>
+  <p>
+    <code>SECRET_OFFSET</code> never changes and is never secret — it's
+    baked into the program, exactly the way a real binary's internal
+    layout is a fixed property of that binary, learnable once by
+    studying it. The <em>only</em> thing ASLR ever protected was
+    <code>base</code> itself. The moment <code>base</code> leaks, the
+    fixed offset does the rest of the attacker's work for free.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Produce a real information leak from a genuine memory-safety
+        bug (that needs actual memory corruption — Modules 13 and 14,
+        in C, where the bug class is real, not simulated)</li>
+        <li>Leak an address WITHOUT the target's cooperation — this
+        module's "leak" is a labeled print statement, not a discovered
+        vulnerability (Module 34's side-channel content is a genuinely
+        different, subtler leak mechanism)</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Explain precisely and correctly what ASLR does and does not
+        protect against</li>
+        <li>Recognize the "leak one address, compute the rest via a
+        fixed offset" pattern as the general shape behind most real
+        ASLR-bypass exploitation</li>
+        <li>Explain why "we have ASLR enabled" is never, by itself, a
+        complete answer to "is this exploitable"</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track1-core-engine/phase4_mitigations/12_aslr_and_leaks
+python run_aslr_defeat_demo.py</code></pre>
+
+  <div class="callout">
+    If Part A UNEXPECTEDLY succeeds (reads real-looking data at the
+    stale address): this is possible but very unlikely by pure chance
+    given the address space size — more likely, check that you're
+    genuinely running two separate process launches (not accidentally
+    reusing a cached PID or address across runs of the demo script
+    itself). Re-run and confirm the two printed base addresses differ.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      Suppose a program had ASLR enabled AND fixed the "diagnostic
+      pointer" bug (never leaks any address) — but still had the
+      underlying memory-corruption bug that let an attacker corrupt the
+      secret if they knew where it was. Is that program now safe from
+      this attack? Think about what else could still go wrong, before
+      revealing the answer.
+    </summary>
+    <div class="answer">
+      Not necessarily safe — just harder to attack, which is exactly
+      ASLR's real, honest promise (raising cost, not eliminating risk).
+      Removing this one obvious leak closes this specific path, but an
+      attacker with a memory-corruption bug often has other ways to
+      find an address: brute-forcing across many attempts if the
+      program doesn't crash-and-restart with fresh randomization each
+      time (a real, historically significant weakness in some
+      network services), exploiting a completely different leak
+      elsewhere in the program, or using side-channel techniques that
+      infer address information indirectly without ever "printing" it
+      (Module 34's territory). The deeper lesson: ASLR is one layer in
+      a defense-in-depth strategy, not a single fix that makes a
+      memory-corruption bug irrelevant — which is exactly why real
+      systems pair it with DEP/W^X (Module 13) and stack canaries/CFI
+      (Module 14) rather than relying on it alone.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why did Part A's failure show "ReadProcessMemory FAILED"
+    instead of just reading the wrong data?</dt>
+    <dd>Because the stale address, while numerically plausible, landed
+    outside any memory Windows had actually mapped for the new
+    process's page tables — reading from a completely unmapped address
+    fails outright rather than returning garbage. If it had happened to
+    land inside SOME mapped-but-unrelated region, you'd see the
+    "succeeded but wrong content" case instead — both outcomes equally
+    demonstrate ASLR did its job, just via slightly different failure
+    shapes.</dd>
+
+    <dt>Is a 2^48-ish address space actually hard to brute-force guess?</dt>
+    <dd>Yes, dramatically — for a 64-bit process, ASLR's real entropy
+    (the actual number of possible base positions, which is smaller
+    than the theoretical full address space but still very large) makes
+    blind guessing computationally infeasible for a single-shot,
+    crash-if-wrong attack. This is precisely why real attackers pursue
+    information leaks instead of brute force whenever a target has real
+    ASLR.</dd>
+
+    <dt>Does 32-bit ASLR provide the same protection as 64-bit?</dt>
+    <dd>No — historically, 32-bit processes have a much smaller address
+    space to randomize within, meaning far less real entropy and a
+    meaningfully higher (though still nontrivial) chance of a lucky
+    blind guess. This is one of several real reasons 64-bit software is
+    considered to have a stronger ASLR posture than 32-bit, independent
+    of any other factor.</dd>
+
+    <dt>Could this exact leak-plus-offset pattern apply inside a
+    browser's JavaScript engine?</dt>
+    <dd>Yes — this is a well-known real category of browser
+    vulnerability: a JS engine bug that lets script code read a raw
+    pointer value (e.g. via a type-confusion bug exposing an internal
+    object's address to JavaScript) gives an attacker exactly the
+    "leaked base" this module simulates, often followed by exactly this
+    kind of fixed-offset computation to locate other sensitive engine
+    structures.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You've proven ASLR's real, limited guarantee. Module 13 moves to a
+    mitigation with a sharper, more absolute claim: DEP/W^X doesn't
+    just raise cost — it makes an entire class of action (executing
+    injected bytes from writable memory) structurally impossible,
+    enforced by the CPU itself. This is also where the course moves to
+    real C code, since C is genuinely what's needed to show the
+    underlying bug this mitigation defends against.
+  </p>
+
+  <div class="module-footer">
+    <a href="../../phase3_sandboxing/11_site_isolation_model/tutorial.html">← Module 11: site_isolation_model</a>
+    <a href="../13_dep_nx_w_xor_x/tutorial.html">Module 13: dep_nx_w_xor_x →</a>
+  </div>
+</div>
