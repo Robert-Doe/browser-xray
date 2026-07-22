@@ -1,0 +1,47 @@
+<title>Concept: SID</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#9370d8;--accent-dim:#332a52;}</style>
+
+<div class="page">
+  <span class="module-badge">VOCABULARY WEB · MODULE 4 · TERM 4 OF 4</span>
+  <h1>SID (Security Identifier)</h1>
+
+  <div class="analogy-box">
+    If a token is your whole employee badge, a SID is ONE specific line
+    printed on it — "Clearance Level: Medium," say. A badge carries
+    several SIDs at once (your personal identity is one, each group
+    you belong to is another) the same way a real badge might list a
+    name AND a department AND a clearance tier, all as separate,
+    individually-meaningful facts.
+  </div>
+
+  <p>
+    A SID is a structured identifier for ONE security principal — a
+    specific user, a specific group, or (the form Module 4's own demo
+    used directly) a specific integrity LEVEL. Module 4 read a real
+    one: <code>S-1-16-8192</code>, decoded via
+    <code>win32security.ConvertSidToStringSid()</code>, where the
+    trailing <code>8192</code> is the actual Medium-integrity RID.
+  </p>
+  <p>
+    A <a href="concept_token.html">token</a> doesn't just have "one"
+    SID — it carries a whole SET of them (your user SID, each group
+    you're a member of, and your integrity-level SID among them),
+    which is why comparing two tokens' "SIDs" always means specifying
+    WHICH SID you're comparing.
+  </p>
+
+  <div class="connects-box">
+    SIDs are what a <a href="concept_token.html">token</a> is actually
+    built FROM — and what the kernel checks a token's SIDs against when
+    deciding whether to grant a <a href="concept_handle.html">handle</a>.
+    See the <a href="concept_how_they_connect.html">connections hub</a>
+    for the complete chain from a bare <a href="concept_pid.html">PID</a>
+    all the way to a granted handle.
+  </div>
+
+  <p style="margin-top:2rem;">
+    <a href="concept_token.html">← Previous: Token</a> ·
+    <a href="concept_how_they_connect.html">All four terms, connected →</a>
+  </p>
+</div>

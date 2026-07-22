@@ -1,0 +1,41 @@
+<title>Concept: PID</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#9370d8;--accent-dim:#332a52;}</style>
+
+<div class="page">
+  <span class="module-badge">VOCABULARY WEB · MODULE 4 · TERM 1 OF 4</span>
+  <h1>PID (Process ID)</h1>
+
+  <div class="analogy-box">
+    A PID is like a coat-check ticket NUMBER printed on a public sign
+    board — anyone walking past can read it, remember it, and mention
+    it to someone else. Knowing the number tells you nothing about
+    whether you're allowed to actually claim the coat.
+  </div>
+
+  <p>
+    A PID is a plain, small integer the kernel assigns to a process
+    when it's created — globally visible, easily obtained (any process
+    can enumerate every PID on the system via a Toolhelp32 snapshot,
+    exactly as Module 4's own <code>count_threads()</code> helper
+    does), and carrying <strong>zero access rights of its own</strong>.
+  </p>
+  <p>
+    Knowing a process's PID lets you ATTEMPT to interact with it — call
+    <code>OpenProcess(pid, ...)</code>, for instance — but whether that
+    attempt succeeds is decided entirely by a completely separate
+    mechanism (a handle, checked against your own token). A PID is an
+    identity label, not a key.
+  </p>
+
+  <div class="connects-box">
+    Confused with <a href="concept_handle.html">Handle</a> constantly —
+    see <a href="concept_how_they_connect.html">the connections hub</a>
+    for the exact, common wrong statement this leads to.
+  </div>
+
+  <p style="margin-top:2rem;">
+    <a href="concept_how_they_connect.html">← All four terms, connected</a> ·
+    <a href="concept_handle.html">Next: Handle →</a>
+  </p>
+</div>

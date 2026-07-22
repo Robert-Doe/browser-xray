@@ -1,0 +1,47 @@
+<title>Concept: Handle</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#9370d8;--accent-dim:#332a52;}</style>
+
+<div class="page">
+  <span class="module-badge">VOCABULARY WEB · MODULE 4 · TERM 2 OF 4</span>
+  <h1>Handle</h1>
+
+  <div class="analogy-box">
+    A handle is the actual coat-check ticket in your OWN pocket — a
+    private, unguessable-to-outsiders reference the attendant issued
+    directly to you, that only means something because THEY, not you,
+    keep the real record of what it's good for.
+  </div>
+
+  <p>
+    A handle is an opaque number, meaningful only inside the process
+    that holds it, that the kernel maps (in a table only the kernel
+    can see) to a real object and a specific set of GRANTED RIGHTS.
+    Module 4's own demo drew this distinction directly: getting a
+    process's PID is free and requires nothing; getting a HANDLE to
+    that process required calling <code>OpenProcess()</code> with an
+    explicit requested access mask, which the kernel could — and in a
+    cross-privilege scenario, would — refuse.
+  </p>
+  <p>
+    Two processes can each hold a handle numbered <code>0x38</code> that
+    refer to completely unrelated objects — the number alone means
+    nothing outside the process holding it, unlike a PID, which is
+    globally consistent.
+  </p>
+
+  <div class="connects-box">
+    A handle is obtained BY PRESENTING a <a href="concept_token.html">token</a>
+    (your credentials) to the kernel, which checks it against the
+    target object's own <a href="concept_sid.html">SID</a>-based
+    permissions before deciding whether to grant it. See the
+    <a href="concept_how_they_connect.html">connections hub</a> for the
+    full chain.
+  </div>
+
+  <p style="margin-top:2rem;">
+    <a href="concept_pid.html">← Previous: PID</a> ·
+    <a href="concept_how_they_connect.html">All four terms, connected</a> ·
+    <a href="concept_token.html">Next: Token →</a>
+  </p>
+</div>

@@ -1,0 +1,217 @@
+<title>Module 4: process_anatomy — A Process Is a Filing Cabinet, Not a Running .exe</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#9370d8;--accent-dim:#332a52;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 1 · PHASE 1 · MODULE 04</span>
+  <h1>process_anatomy</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: a process is a kernel-tracked bundle of identity, a
+    security context, a handle table, and N threads — every piece
+    independently, live-queryable, both about yourself and (with the
+    right handle) about another process entirely.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../../../prerequisites/04_processes_and_threads.html#pcb">the Process Control Block</a>
+    <a class="tag-link" href="../../../prerequisites/04_processes_and_threads.html#process-definition">process vs. thread</a>
+    <a class="tag-link" href="../../../prerequisites/05_handles_and_fds.html#handle-table">handles as scoped access</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    "The running program" feels like one solid thing, the way "a
+    company" feels like one solid thing from the outside. But a company
+    is actually a filing cabinet at the county clerk's office: an
+    identity number, a registered legal status, a list of employees
+    (threads) currently doing work, a list of assets and accounts it's
+    allowed to touch (handles), and a record of who it's legally
+    allowed to act as (its security context). None of that is visible
+    by looking at the storefront. It's all sitting in a government
+    record, and — crucially — a sufficiently authorized outside party
+    (an auditor with the right paperwork) can pull that exact same
+    filing-cabinet record for a company that isn't their own. That's
+    what this module does to a process.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li><code>process_anatomy.py</code> asks the OS for its own
+    "pseudo-handle" (<code>GetCurrentProcess()</code>) — a handle that
+    always just means "me," requiring no permission check.</li>
+    <li>It queries memory usage, open handle count, thread count, and
+    the security token's integrity level — four genuinely different
+    kernel subsystems, each answering a different piece of "what is
+    this process."</li>
+    <li><code>inspect_child_process.py</code> spawns a real second
+    Python process.</li>
+    <li>Rather than a free pseudo-handle, it must call
+    <code>OpenProcess()</code>, explicitly naming which access rights
+    it wants — the kernel checks whether the calling process is allowed
+    those rights against that target before handing back a real handle.</li>
+    <li>With that handle in hand, the exact same query functions run
+    again — this time reading a genuinely different process's kernel
+    state from the outside.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>--- Anatomy of THIS process (PID 38700) ---
+
+PID (process identity, kernel-assigned)      : 38700
+Threads currently executing in this process  : 4
+Open kernel handles owned by this process     : 173
+Working set (physical RAM currently used)     : 16,060,416 bytes
+Page faults so far                             : 4,088
+Security context (token integrity level)       : Medium (RID 0x2000)
+
+--- Anatomy of the CHILD process (PID 32804), seen from outside ---
+Threads                     : 4
+Open kernel handles         : 89
+Working set                 : 10,608,640 bytes
+Security context (integrity): Medium (RID 0x2000)</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output. Same five facts, same query logic — one
+    read about the calling process itself, one read across a process
+    boundary via an explicit handle.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>access = win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ
+handle = win32api.OpenProcess(access, False, child.pid)
+
+mem = win32process.GetProcessMemoryInfo(handle)
+threads = count_threads(child.pid)
+handles = handle_count(handle)
+level_name, level_rid = integrity_level(handle)</code></pre>
+  <p>
+    Notice this is the <em>identical</em> set of function calls
+    <code>process_anatomy.py</code> made about itself — the only thing
+    that changed is where <code>handle</code> came from. A bare PID
+    (<code>child.pid</code>) is just an integer; it grants nothing.
+    <code>OpenProcess()</code> is the actual gate — the kernel decides,
+    based on the calling process's own security context and the
+    requested rights, whether to hand back a usable handle at all.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Read the actual <em>memory contents</em> of another
+        process (that needs <code>ReadProcessMemory</code> and a
+        different access right — deliberately not built here)</li>
+        <li>Explain how a process gets <em>fewer</em> rights than its
+        parent on purpose (Module 9 — least-privilege tokens)</li>
+        <li>Say why two processes in different sandboxes can't inspect
+        each other at all, even with matching rights (Module 11)</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>List, with live captured numbers, the actual pieces a
+        process is made of</li>
+        <li>Explain precisely why "PID" and "handle" are not
+        interchangeable — one is a name, one is scoped access</li>
+        <li>Read a token's integrity level and know what it says about
+        that process's standing (this becomes load-bearing in Module 9)</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track1-core-engine/phase1_bare_metal/04_process_anatomy
+python process_anatomy.py
+python inspect_child_process.py</code></pre>
+
+  <div class="callout">
+    If <code>OpenProcess</code> in <code>inspect_child_process.py</code>
+    raises an access-denied error: check that no antivirus/EDR policy
+    on your machine is specifically restricting inter-process handle
+    grants for Python processes (some hardened endpoint configurations
+    do this). This module's expected result requires nothing more than
+    a normal, non-elevated user session — no Administrator rights
+    needed for these specific access rights against a same-user child
+    process.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      Two processes both show integrity level "Medium." Does that tell
+      you they're allowed to do the same things as each other? Think
+      about what else determines a process's actual permissions before
+      revealing the answer.
+    </summary>
+    <div class="answer">
+      No. Integrity level is <em>one</em> input the kernel uses when
+      deciding what a process can touch — mainly, it enforces that
+      lower-integrity processes can't write to or manipulate
+      higher-integrity ones. But the full picture of what a process can
+      do also depends on its token's group memberships, its specific
+      granted/denied privileges (like <code>SeDebugPrivilege</code>),
+      and any restricting SIDs or AppContainer capabilities attached to
+      it. Two "Medium" processes can still have meaningfully different
+      real-world permissions. This distinction matters directly for
+      Module 9, where a sandboxed renderer process is deliberately given
+      a <em>more restricted</em> token than a plain integrity-level
+      comparison alone would suggest.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why does the child process show fewer open handles than the parent (89 vs. 173)?</dt>
+    <dd>Every process accumulates handles as it initializes — loaded
+    DLLs, heap sections, synchronization objects created by the
+    runtime, etc. Our parent process (running this whole test harness)
+    had simply done more by the time we measured it than the freshly
+    spawned, nearly idle child had. Neither number is "correct" in
+    isolation — they reflect each process's own history so far.</dd>
+
+    <dt>Could I get a handle to ANY process on the system this way?</dt>
+    <dd>Only if the kernel's access check allows it — which depends on
+    your process's own privileges and the target's integrity level and
+    owner. Trying to <code>OpenProcess</code> a higher-integrity or
+    different-user process with the same code would very plausibly
+    fail with access denied. This module deliberately targets a
+    same-user child to keep the demonstration reliable without
+    requiring elevation.</dd>
+
+    <dt>Is "integrity level" the same thing as "is this process an Administrator"?</dt>
+    <dd>No — related, but not the same axis. Integrity level (Low/Medium/High/System)
+    is about what a process can be <em>written to or manipulated by</em>
+    from other processes. Whether a token has Administrator group
+    membership is a separate property governing what privileged
+    operations the process can <em>request from the kernel</em>. A
+    process can be "Medium" integrity and still hold Administrator
+    group membership (this is exactly what UAC's split-token behavior
+    manages).</dd>
+
+    <dt>Why does <code>count_threads</code> need to scan every thread on
+    the whole system?</dt>
+    <dd>Because that's genuinely how the Toolhelp32 snapshot API works
+    — see <code>DECISIONS.md</code>. There's no "give me thread count
+    for PID X" shortcut in this API family; you snapshot everything and
+    filter client-side.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You've now inspected a process's anatomy from both inside and
+    outside. Module 5 proves the claim that gave that anatomy its
+    meaning in the first place: that spawning a new process actually
+    creates a <em>distinct</em> address space — by writing to "the
+    same" variable in a parent and a freshly spawned child and watching
+    them never collide.
+  </p>
+
+  <div class="module-footer">
+    <a href="../03_syscall_boundary/tutorial.html">← Module 03: syscall_boundary</a>
+    <a href="../../phase2_process_ipc/05_process_creation/tutorial.html">Module 05: process_creation →</a>
+  </div>
+</div>

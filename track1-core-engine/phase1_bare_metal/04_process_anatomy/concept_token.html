@@ -1,0 +1,46 @@
+<title>Concept: Token</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#9370d8;--accent-dim:#332a52;}</style>
+
+<div class="page">
+  <span class="module-badge">VOCABULARY WEB · MODULE 4 · TERM 3 OF 4</span>
+  <h1>Token (Access Token)</h1>
+
+  <div class="analogy-box">
+    A token is your entire employee ID badge — your name, your
+    department, every door group you belong to, and a printed
+    clearance LEVEL — the complete credential a security guard actually
+    inspects before deciding whether today's badge opens today's door.
+  </div>
+
+  <p>
+    A token is the kernel object representing WHO a process is allowed
+    to act as: its user identity, its group memberships, its specific
+    granted/denied privileges, and (central to Module 9's entire
+    module) its integrity level. Every single access check the kernel
+    performs — including the ones deciding whether a
+    <a href="concept_handle.html">handle</a> request succeeds — consults
+    the calling process's token.
+  </p>
+  <p>
+    Module 9 proved a token's most important practical property
+    directly: a process's token can be DUPLICATED and DELIBERATELY
+    NARROWED (lowering its integrity level) before spawning a child —
+    and that narrowed child, even though it's still running as the
+    exact same underlying user account, genuinely has fewer real rights
+    than its parent.
+  </p>
+
+  <div class="connects-box">
+    A token doesn't identify a SPECIFIC resource — it identifies WHO is
+    asking. The thing it's compared AGAINST, to decide integrity-level
+    outcomes, is built from <a href="concept_sid.html">SIDs</a>. See
+    the <a href="concept_how_they_connect.html">connections hub</a>.
+  </div>
+
+  <p style="margin-top:2rem;">
+    <a href="concept_handle.html">← Previous: Handle</a> ·
+    <a href="concept_how_they_connect.html">All four terms, connected</a> ·
+    <a href="concept_sid.html">Next: SID →</a>
+  </p>
+</div>
