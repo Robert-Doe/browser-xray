@@ -1,0 +1,214 @@
+<title>Module 16: http_parsing — Nothing Here Is Magic</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#9d6fd0;--accent-dim:#2e2050;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 2 · PHASE 5 · MODULE 16</span>
+  <h1>http_parsing</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: an HTTP response is plain, structured text over a socket —
+    fully hand-parseable, including its two real body-framing
+    mechanisms, with no library required.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../15_dns_tcp_tls_handshake/tutorial.html">Module 15: dns_tcp_tls_handshake</a>
+    <a class="tag-link" href="../../../prerequisites/06_bytes_hex_endianness.html#hex-literacy">reading raw bytes</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A telegram has a rigid, plain-text structure anyone can learn to
+    read in five minutes: a line for the recipient, a blank line, the
+    message body, and — critically — the sender always tells you
+    either exactly how many words to expect, or marks the message in
+    clearly delimited pieces if the total length wasn't known when
+    sending began. There's no secret decoder ring. The entire "format"
+    is a handful of plain-text conventions, agreed on in advance,
+    followed consistently. An HTTP response is exactly this — the
+    conventions just have specific names (status line, headers,
+    Content-Length, chunked encoding).
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>Raw bytes arrive over the socket (Module 15's channel).</li>
+    <li>We find the first <code>\r\n\r\n</code> — that boundary
+    separates the headers from the body, always, by spec.</li>
+    <li>The first line before that boundary is the status line
+    (<code>HTTP/1.1 200 OK</code>); every line after it is a
+    <code>Name: value</code> header.</li>
+    <li>We check ONE specific header, <code>Transfer-Encoding</code>,
+    to decide how to read the body: if it says <code>chunked</code>, we
+    reverse the chunk framing ourselves; otherwise, if
+    <code>Content-Length</code> is present, we take exactly that many
+    bytes; otherwise, whatever's left until the connection closes
+    <em>is</em> the body.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>=== Part 0: self-test against synthetic, hand-built responses ===
+  Content-Length case: parsed body = b'hello world' (correct)
+  chunked case:        parsed body = b'hello world' (correct)
+
+=== Part A: real live fetch -- whatever framing the server actually uses ===
+  actual framing mechanism used: chunked (Transfer-Encoding: chunked)
+  body length (our parser's count, after any dechunking): 559 bytes
+
+=== Part B: real chunked-encoded fetch, from a local server ===
+  raw bytes received (still chunk-framed): b'a\r\nThe quick \r\na\r\nbrown fox \r\n6\r\njumps.\r\n0\r\n\r\n'
+  DECHUNKED body (our parser reassembled it): b'The quick brown fox jumps.'</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output. Note Part A's honest surprise: `example.com`
+    turned out to use chunked encoding, not Content-Length — exactly
+    the kind of thing you only learn by actually testing.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>while True:
+    line_end = chunked_body.index(b"\r\n", pos)
+    size = int(chunked_body[pos:line_end].split(b";", 1)[0], 16)
+    pos = line_end + 2
+    if size == 0:
+        break
+    result.extend(chunked_body[pos : pos + size])
+    pos += size + 2</code></pre>
+  <p>
+    Chunked encoding's whole idea: each piece of the body is preceded
+    by its own length, written in hexadecimal, on its own line. Read
+    the length, read that many bytes, skip the trailing
+    <code>\r\n</code>, repeat — until a zero-length chunk says "that's
+    everything." No external library logic is needed here; it's a
+    length-prefixed framing scheme, the same underlying idea Module 8's
+    IPC protocol used, just spelled out in hex text instead of raw
+    binary bytes.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Parse HTML — this module stops at "here are the raw body
+        bytes"; turning those bytes into a DOM starts at Module 19</li>
+        <li>Handle HTTP/2 or HTTP/3 framing — those use entirely
+        different, binary framing schemes, not the plain-text HTTP/1.1
+        format this module parses</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Read any HTTP/1.1 response's raw bytes and know exactly
+        where the body starts and how long it is</li>
+        <li>Explain why a server MUST specify one of two framing
+        mechanisms (or close the connection) — without one, there is no
+        way to know where the message ends</li>
+        <li>Recognize that "the server said Content-Length" is an
+        assumption to VERIFY, not assume, for any specific real server</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track2-applied-layer/phase5_networking/16_http_parsing
+python run_http_parsing_demo.py</code></pre>
+  <p>Requires outbound internet access for Part A; Part B is fully local.</p>
+
+  <div class="callout">
+    If Part A shows a different framing mechanism than
+    <code>chunked</code>: that's fine and expected — it means
+    `example.com`'s serving configuration changed, or you're being
+    served by a different edge node. The parser handles all three real
+    cases (chunked, Content-Length, connection-close); Part 0's
+    self-test is what guarantees Content-Length specifically is
+    verified regardless of what any live server does today.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      Suppose a malicious server sent a response with BOTH a
+      <code>Content-Length</code> header AND a
+      <code>Transfer-Encoding: chunked</code> header, with conflicting
+      framing information. Why might that specific ambiguity be
+      dangerous in real systems, rather than just confusing? Think
+      about what happens when TWO different systems (say, a proxy and
+      the origin server) parse the SAME bytes differently, before
+      revealing the answer.
+    </summary>
+    <div class="answer">
+      This is a real, named, historically significant class of
+      vulnerability called <strong>HTTP request/response smuggling</strong>.
+      It's dangerous specifically because different systems in the same
+      chain (a CDN or proxy, and the actual origin server) might resolve
+      the Content-Length/Transfer-Encoding conflict DIFFERENTLY — one
+      system decides the message ends at one point, the next system in
+      the chain decides it ends somewhere else. That disagreement lets
+      an attacker hide a second, smuggled request or response inside
+      what the first system thought was the complete, single message —
+      potentially reaching a victim (another user's request on a shared
+      connection, or a security control the smuggled content bypasses)
+      that was never supposed to see it. This module's parser doesn't
+      defend against this — real-world guidance (per the HTTP
+      specification) is that a compliant implementation should REJECT a
+      message with both headers present rather than try to guess which
+      one wins, precisely because that ambiguity itself is the
+      vulnerability.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why does chunked encoding exist at all — why not always use
+    Content-Length?</dt>
+    <dd>Content-Length requires knowing the total body size BEFORE you
+    start sending it. That's easy for a static file, but often
+    impossible for dynamically generated or streamed content (think:
+    a live video feed, or a page generated progressively). Chunked
+    encoding lets a server start sending data immediately, one
+    known-size piece at a time, without ever needing to know the grand
+    total in advance.</dd>
+
+    <dt>What happens if neither Content-Length nor chunked encoding is
+    present?</dt>
+    <dd>Per HTTP/1.1's own rules, the body is understood to run until
+    the connection closes — which is exactly the fallback branch this
+    module's parser implements, and exactly why our fetch functions
+    loop on <code>recv()</code> until it returns empty rather than
+    reading a fixed amount.</dd>
+
+    <dt>Why lowercase every header name during parsing?</dt>
+    <dd>Because HTTP header names are explicitly case-insensitive by
+    specification — a server is free to send <code>Content-Length</code>,
+    and another to send <code>content-length</code>, and both are
+    equally valid. Normalizing during parsing means code using this
+    parser never has to remember to check every possible capitalization
+    itself.</dd>
+
+    <dt>Is this parser something a real browser would actually use?</dt>
+    <dd>Conceptually, yes — every real browser's networking stack
+    contains logic performing exactly these same checks (find the
+    header/body boundary, check Transfer-Encoding, fall back to
+    Content-Length, fall back to connection-close), just written in
+    a systems language, heavily optimized, and hardened against
+    malformed/adversarial input in ways this teaching-scoped parser
+    deliberately doesn't attempt.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You can now read anything an HTTP server sends back. Module 17
+    introduces the concept that turns "a response came back" into "is
+    this script allowed to see it" — the Same-Origin Policy, the single
+    most consequential rule in the entire web security model.
+  </p>
+
+  <div class="module-footer">
+    <a href="../15_dns_tcp_tls_handshake/tutorial.html">← Module 15: dns_tcp_tls_handshake</a>
+    <a href="../17_origin_model_sop/tutorial.html">Module 17: origin_model_sop →</a>
+  </div>
+</div>
