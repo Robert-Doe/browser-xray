@@ -1,0 +1,211 @@
+<title>Module 31: mixed_content_hsts — Never Sent in the Clear, Not Even Once</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#2fae9e;--accent-dim:#0f3a37;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 2 · PHASE 9 · MODULE 31 · PHASE FINALE</span>
+  <h1>mixed_content_hsts</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: HSTS and mixed-content handling both exist to prevent a
+    silent, attacker-exploitable downgrade from HTTPS to HTTP — one by
+    rewriting requests before they're sent, the other by treating
+    different resource types by real, differing risk.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../30_csp_enforcement/tutorial.html">Module 30: csp_enforcement</a>
+    <a class="tag-link" href="../../phase5_networking/15_dns_tcp_tls_handshake/tutorial.html">Module 15: dns_tcp_tls_handshake</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    Imagine a courier service that, the very first time you use them,
+    hands you a permanent note: "from now on, always call our SECURE
+    line — never the old public one, even if someone tells you to."
+    From that point forward, you don't even dial the old number to be
+    redirected — you never dial it at all, because dialing it even
+    once means whoever's tapped that old line already has what they
+    wanted before your call ever reaches the courier. HSTS is that
+    permanent note. Once received, the insecure line is never touched
+    again, not even for a single ring.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>A site's HTTPS response includes
+    <code>Strict-Transport-Security: max-age=31536000; includeSubDomains</code>
+    — recorded by the browser.</li>
+    <li>Any FUTURE request to that host (or a subdomain, since
+    <code>includeSubDomains</code> was set) starting with
+    <code>http://</code> is rewritten to <code>https://</code> — before
+    the browser makes any network call at all.</li>
+    <li>Separately, on an already-HTTPS page, a subresource request
+    that's still plain HTTP gets checked: is it passive content (image,
+    audio, video)? Auto-upgrade to HTTPS. Is it active content (script,
+    stylesheet, frame)? Block it outright.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>=== HSTS ===
+  requested: http://example.com/login
+  actually sent: https://example.com/login (upgraded)
+
+  requested: http://sub.example.com/page
+  actually sent: https://sub.example.com/page (upgraded)
+
+  requested: http://not-example.com/page
+  actually sent: http://not-example.com/page (unchanged)
+
+=== Mixed content ===
+  <img src="http://example.com/logo.png">     -> UPGRADED
+  <script src="http://cdn.example.com/lib.js"> -> BLOCKED
+  <link src="http://cdn.example.com/theme.css"> -> BLOCKED
+  <video src="http://example.com/intro.mp4">  -> UPGRADED</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output. Note <code>not-example.com</code> — a
+    similar-looking but genuinely unrelated domain — correctly
+    untouched, not accidentally swept up by a sloppy string match.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>labels = hostname.split(".")
+for i in range(1, len(labels)):
+    parent = ".".join(labels[i:])
+    record = self._records.get(parent)
+    if record and record.include_subdomains:
+        return True</code></pre>
+  <p>
+    This label-by-label walk is doing real security work, not just
+    tidiness. A simpler <code>hostname.endswith("example.com")</code>
+    check would have wrongly matched <code>not-example.com</code> —
+    genuinely different, unrelated string that happens to share a
+    suffix. Comparing whole labels is what tells a real subdomain apart
+    from a coincidence.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Model the HSTS PRELOAD list — real browsers ship with a
+        baked-in list of major sites that are HTTPS-only from the very
+        first request ever, closing the gap even HSTS itself has (the
+        very first visit, before any header was ever seen)</li>
+        <li>Handle every mixed-content resource type — only a
+        representative subset (img/audio/video vs. script/link/iframe)
+        is classified</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Explain precisely why HSTS's rewrite must happen
+        client-side, before any request, not as a server-side redirect</li>
+        <li>Correctly implement subdomain matching that avoids a real,
+        easy security bug (string-suffix false positives)</li>
+        <li>Predict, for a given resource type, whether a browser will
+        upgrade or block it as mixed content</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track2-applied-layer/phase9_policy_layer/31_mixed_content_hsts
+python run_mixed_content_demo.py</code></pre>
+
+  <div class="callout">
+    If a subdomain UNEXPECTEDLY doesn't get upgraded: check that
+    <code>includeSubDomains</code> was actually included when the
+    parent domain's HSTS header was recorded — without it, HSTS
+    protection is scoped to the EXACT host only, and
+    <code>sub.example.com</code> would correctly NOT inherit
+    <code>example.com</code>'s record.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      HSTS only protects a host starting from the SECOND time a
+      browser visits it (the first visit is what actually delivers the
+      `Strict-Transport-Security` header in the first place). Given
+      that gap, what's the ONLY way a browser could protect a site's
+      very FIRST-ever visit against an SSL-stripping downgrade attack?
+      Think about what information the browser would need to have
+      BEFORE ever making a single request, before revealing the answer.
+    </summary>
+    <div class="answer">
+      The browser would need to already know, in advance, that this
+      host should always be HTTPS-only — without having ever visited it
+      before. That's exactly what the real HSTS PRELOAD LIST is: a
+      hardcoded list, shipped as part of the browser itself (not
+      learned from any response header), of domains that have
+      submitted themselves for guaranteed HTTPS-only treatment from the
+      very first request, forever. This closes the "trust on first use"
+      gap ordinary HSTS has, at the cost of requiring a site to
+      proactively submit itself to a centralized list maintained by
+      browser vendors, rather than simply sending a header. This
+      module's toy `HstsStore` only models the header-learned case;
+      the preload list is a real, separate, additional mechanism
+      deliberately left as a named gap here.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why does mixed content matter if the PAGE itself is already
+    loaded securely over HTTPS?</dt>
+    <dd>Because the page's own security guarantee doesn't automatically
+    extend to everything it LOADS — a script fetched over plain HTTP
+    can be intercepted and swapped by a network attacker just as easily
+    as if the whole page were HTTP, even though the address bar shows a
+    secure padlock for the page itself. Mixed-content handling exists
+    specifically to prevent that gap from quietly undermining an
+    otherwise-secure page.</dd>
+
+    <dt>Why treat scripts/stylesheets so much more strictly than
+    images?</dt>
+    <dd>Because of what each can actually DO if a network attacker
+    swaps it: a tampered image is limited to displaying something
+    different or wrong. A tampered script can execute arbitrary logic
+    with the full privileges of the page it's running on — read
+    cookies, modify the DOM, exfiltrate data. The severity gap is real,
+    not arbitrary, which is exactly why browsers draw this specific
+    line between "auto-upgrade and hope for the best" and "block,
+    full stop."</dd>
+
+    <dt>Could a site accidentally disable its own HSTS protection?</dt>
+    <dd>Yes — sending `max-age=0` deliberately clears a previously
+    stored record (this module implements that real behavior directly).
+    A misconfigured server accidentally sending this could genuinely
+    remove HSTS protection a site had previously established, which is
+    a real, documented operational risk site operators have to be
+    careful about.</dd>
+
+    <dt>Does HSTS or mixed-content blocking involve the SERVER deciding
+    anything at request time?</dt>
+    <dd>No — consistent with every policy this phase has built (SOP,
+    CORS, SameSite, CSP), both mechanisms are entirely browser-side
+    decisions, made using information the browser already has (a
+    stored HSTS record, the page's own scheme) before any new request
+    is even constructed.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    <strong>Phase 9 (Browser Security Policy Layer) is complete.</strong>
+    Every policy mechanism this phase built — SOP, CORS, SameSite, CSP,
+    HSTS/mixed-content — now gets put to the test. Phase 10 turns from
+    building policy to attacking it: Module 32 runs a real XSS and CSRF
+    payload against your own toy browser stack, first succeeding, then
+    failing once the specific policy module that stops it is wired in.
+  </p>
+
+  <div class="module-footer">
+    <a href="../30_csp_enforcement/tutorial.html">← Module 30: csp_enforcement</a>
+    <a href="../../phase10_attack_surface/32_xss_csrf_on_toy_browser/tutorial.html">Module 32: xss_csrf_on_toy_browser →</a>
+  </div>
+</div>

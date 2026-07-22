@@ -1,0 +1,43 @@
+<title>Concept: CORS</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#2fae9e;--accent-dim:#0f3a37;}</style>
+
+<div class="page">
+  <span class="module-badge">VOCABULARY WEB · MODULE 31 · TERM 2 OF 5</span>
+  <h1>CORS (Cross-Origin Resource Sharing)</h1>
+
+  <div class="analogy-box">
+    If <a href="concept_sop.html">SOP</a> is "your mail is only opened
+    by you, by default," CORS is a note the SENDER can attach that says
+    "actually, I'm fine with this specific other person opening it too"
+    — an explicit, sender-declared exception, never something the
+    recipient decides for themselves.
+  </div>
+
+  <p>
+    CORS is a server-declared, browser-enforced RELAXATION of
+    <a href="concept_sop.html">SOP</a>'s default. Module 18 proved its
+    real two-part mechanism: for "non-simple" requests, a preflight
+    OPTIONS round trip asks permission BEFORE the real request is even
+    sent; and separately, the actual response must ALSO carry a
+    matching <code>Access-Control-Allow-Origin</code> header, or the
+    browser withholds it regardless of what the preflight said.
+  </p>
+  <p>
+    CORS doesn't replace SOP — it's a deliberate, narrow, opt-in
+    EXCEPTION to it, for exactly the origins a server explicitly lists.
+  </p>
+
+  <div class="connects-box">
+    CORS is entirely about whether a script can READ a cross-origin
+    response — it has nothing to do with whether COOKIES ride along on
+    the request at all; that's <a href="concept_samesite.html">SameSite</a>'s
+    job. See the <a href="concept_how_they_connect.html">connections hub</a>.
+  </div>
+
+  <p style="margin-top:2rem;">
+    <a href="concept_sop.html">← Previous: SOP</a> ·
+    <a href="concept_how_they_connect.html">All five policies, connected</a> ·
+    <a href="concept_samesite.html">Next: SameSite →</a>
+  </p>
+</div>

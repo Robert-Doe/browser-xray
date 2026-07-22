@@ -1,0 +1,113 @@
+<title>How SOP, CORS, SameSite, CSP, and HSTS Connect</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#2fae9e;--accent-dim:#0f3a37;}</style>
+
+<div class="page">
+  <span class="module-badge">VOCABULARY WEB HUB · MODULE 31</span>
+  <h1>How SOP, CORS, SameSite, CSP, and HSTS Connect</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Five real browser policies, the single most commonly conflated
+    group of terms in practical web security — here's exactly how they
+    differ.
+  </p>
+
+  <h2><span class="num">01</span>Side by Side</h2>
+  <table>
+    <tr><th>Policy</th><th>Governs</th><th>Declared by</th><th>Checked when</th></tr>
+    <tr><td><a href="concept_sop.html">SOP</a></td><td>reading a cross-origin RESPONSE</td><td>nobody — it's the default</td><td>after the response arrives</td></tr>
+    <tr><td><a href="concept_cors.html">CORS</a></td><td>relaxing SOP for specific origins</td><td>the server</td><td>before AND after the request (preflight + response)</td></tr>
+    <tr><td><a href="concept_samesite.html">SameSite</a></td><td>whether a COOKIE rides along on a request</td><td>the server (per cookie)</td><td>as the request is constructed</td></tr>
+    <tr><td><a href="concept_csp.html">CSP</a></td><td>whether a SCRIPT is allowed to EXECUTE at all</td><td>the server</td><td>before execution, regardless of origin</td></tr>
+    <tr><td><a href="concept_hsts.html">HSTS</a></td><td>whether a request even goes out as HTTP or HTTPS</td><td>the server (learned once, remembered)</td><td>before any network request at all</td></tr>
+  </table>
+
+  <h2><span class="num">02</span>The Chain, Visually</h2>
+  <div class="diagram-box">
+    <svg viewBox="0 0 760 200" xmlns="http://www.w3.org/2000/svg">
+      <style>
+        .lbl{font:12px monospace;fill:var(--fg);}
+        .dim{font:10px monospace;fill:var(--fg-dim);}
+        .box{fill:var(--bg-raised);stroke:var(--border);}
+        .accentbox{fill:var(--bg-raised);stroke:var(--accent);}
+      </style>
+      <rect class="accentbox" x="10" y="75" width="110" height="50" rx="6"/>
+      <text class="lbl" x="20" y="105">1. HSTS</text>
+
+      <rect class="box" x="150" y="75" width="110" height="50" rx="6"/>
+      <text class="lbl" x="160" y="100">2. SameSite</text>
+      <text class="dim" x="160" y="115">(cookies attached?)</text>
+
+      <rect class="box" x="290" y="75" width="110" height="50" rx="6"/>
+      <text class="lbl" x="300" y="100">3. CORS</text>
+      <text class="dim" x="300" y="115">preflight (if needed)</text>
+
+      <rect class="box" x="430" y="10" width="4" height="1" fill="none"/>
+      <rect class="box" x="430" y="75" width="110" height="50" rx="6"/>
+      <text class="lbl" x="450" y="105">request sent</text>
+
+      <rect class="box" x="570" y="75" width="80" height="50" rx="6"/>
+      <text class="lbl" x="580" y="100">SOP</text>
+      <text class="dim" x="580" y="115">+ CORS</text>
+      <text class="dim" x="580" y="128">response</text>
+
+      <rect class="accentbox" x="670" y="75" width="80" height="50" rx="6"/>
+      <text class="lbl" x="678" y="100">CSP</text>
+      <text class="dim" x="678" y="115">gates exec</text>
+
+      <line x1="120" y1="100" x2="150" y2="100" stroke="var(--fg-dim)"/>
+      <line x1="260" y1="100" x2="290" y2="100" stroke="var(--fg-dim)"/>
+      <line x1="400" y1="100" x2="430" y2="100" stroke="var(--fg-dim)"/>
+      <line x1="540" y1="100" x2="570" y2="100" stroke="var(--fg-dim)"/>
+      <line x1="650" y1="100" x2="670" y2="100" stroke="var(--fg-dim)"/>
+    </svg>
+    <div class="diagram-caption">
+      Real chronological order for one page load, per Cluster
+      02's deep dive on this exact sequence.
+    </div>
+  </div>
+
+  <h2><span class="num">03</span>Commonly Confused Pairs</h2>
+  <table>
+    <tr><th>The wrong statement</th><th>The correction</th></tr>
+    <tr class="confused-pair">
+      <td class="wrong">"CORS blocks the cross-origin request from being sent."</td>
+      <td class="right">Neither CORS nor SOP ever stops a request from being SENT — only whether the RESPONSE is exposed to script. This exact gap is what makes CSRF (Module 32) possible even on a perfectly CORS/SOP-compliant site.</td>
+    </tr>
+    <tr class="confused-pair">
+      <td class="wrong">"SameSite and Same-Origin mean the same thing, just for cookies."</td>
+      <td class="right">Same-SITE (used by SameSite) compares only the registrable domain — <code>a.example.com</code> and <code>b.example.com</code> ARE same-site. Same-ORIGIN (used by SOP) requires an EXACT match on scheme, host, AND port — those same two URLs are NOT same-origin.</td>
+    </tr>
+    <tr class="confused-pair">
+      <td class="wrong">"CSP is a cross-origin policy, like SOP or CORS."</td>
+      <td class="right">CSP has nothing to do with cross-origin READING — it governs whether a script EXECUTES at all, same-origin or not. A page's own, legitimately same-origin inline script can be blocked by CSP just as easily as a cross-origin one.</td>
+    </tr>
+    <tr class="confused-pair">
+      <td class="wrong">"HTTPS and HSTS are the same protection."</td>
+      <td class="right">HTTPS/TLS (Module 15) encrypts and authenticates a connection ONCE established. HSTS (Module 31) ensures that connection gets established as HTTPS in the first place, rather than being silently downgraded before TLS ever runs — genuinely different failure modes, both real, neither substituting for the other.</td>
+    </tr>
+  </table>
+
+  <h2><span class="num">04</span>Scenario-Matching Quiz</h2>
+  <dl class="qa">
+    <dt>"A hidden form on evil.com auto-submits a POST to your bank, and your session cookie rides along."</dt>
+    <dd>SameSite (or its absence) — this is CSRF, governed by whether the cookie attaches, not by SOP or CORS.</dd>
+
+    <dt>"An injected `&lt;script&gt;` tag from a stored XSS bug is present in the page's HTML but never runs."</dt>
+    <dd>CSP — blocking execution of content already on the page, regardless of its origin.</dd>
+
+    <dt>"A public weather API explicitly allows any website's JavaScript to read its JSON responses."</dt>
+    <dd>CORS — the deliberate, server-declared relaxation of SOP's default.</dd>
+
+    <dt>"Typing `http://` for a banking site you've visited before results in your browser silently connecting via `https://` instead, with no visible redirect."</dt>
+    <dd>HSTS — the pre-flight, client-side rewrite, remembered from a prior visit.</dd>
+
+    <dt>"A script from a different origin's `fetch()` call gets a response back but throws when the code tries to read its body."</dt>
+    <dd>SOP (or CORS's absence) — the request succeeded; only reading the response was blocked.</dd>
+  </dl>
+
+  <p style="margin-top:2rem;">
+    <a href="concept_sop.html">Start from SOP →</a> ·
+    <a href="tutorial.html">← Back to Module 31's tutorial</a> ·
+    <a href="../../../lessons/02_browser_policy_stack/01_explainer.html">See the full cluster deep dive →</a>
+  </p>
+</div>

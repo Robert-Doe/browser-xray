@@ -1,0 +1,44 @@
+<title>Concept: CSP</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#2fae9e;--accent-dim:#0f3a37;}</style>
+
+<div class="page">
+  <span class="module-badge">VOCABULARY WEB · MODULE 31 · TERM 4 OF 5</span>
+  <h1>CSP (Content Security Policy)</h1>
+
+  <div class="analogy-box">
+    Every other term on this page governs mail crossing BETWEEN
+    addresses. CSP is different: it's a standing rule about what's
+    allowed to happen INSIDE your own house, even with things that
+    arrived through your own front door.
+  </div>
+
+  <p>
+    CSP is a server-declared, browser-enforced allowlist governing
+    which SCRIPTS (and other resources) a page is even allowed to
+    execute — checked BEFORE execution, regardless of whether that
+    script is same-origin or cross-origin, injected or intended. Module
+    30 proved the ordering directly: blocked scripts never reach an
+    "executed" list at all.
+  </p>
+  <p>
+    Module 32 showed CSP's real, primary value: it's a SECOND,
+    independent layer against XSS, neutralizing an already-successful
+    injection's ability to run — not a cross-origin policy at all, and
+    not a fix for the underlying injection bug.
+  </p>
+
+  <div class="connects-box">
+    Easy to mistake for a cross-origin policy like
+    <a href="concept_sop.html">SOP</a> or <a href="concept_cors.html">CORS</a>
+    — CSP governs EXECUTION of content already on the page, not
+    cross-origin reading. See the
+    <a href="concept_how_they_connect.html">connections hub</a>.
+  </div>
+
+  <p style="margin-top:2rem;">
+    <a href="concept_samesite.html">← Previous: SameSite</a> ·
+    <a href="concept_how_they_connect.html">All five policies, connected</a> ·
+    <a href="concept_hsts.html">Next: HSTS →</a>
+  </p>
+</div>

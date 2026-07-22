@@ -1,0 +1,39 @@
+<title>Concept: SOP</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#2fae9e;--accent-dim:#0f3a37;}</style>
+
+<div class="page">
+  <span class="module-badge">VOCABULARY WEB · MODULE 31 · TERM 1 OF 5</span>
+  <h1>SOP (Same-Origin Policy)</h1>
+
+  <div class="analogy-box">
+    SOP is the default rule that mail delivered to your mailbox is only
+    ever opened by YOU — not a rule about whether mail gets delivered
+    at all, only about who's allowed to open the envelope once it
+    arrives.
+  </div>
+
+  <p>
+    SOP is the browser's DEFAULT, always-on rule: script running on one
+    origin cannot read the response of a request to a different origin.
+    Module 17 proved the precise mechanism directly — the network
+    request still happens; SOP only withholds the RESPONSE from the
+    calling script afterward.
+  </p>
+  <p>
+    SOP needs no server configuration at all — it's the baseline every
+    other policy on this page either relaxes (<a href="concept_cors.html">CORS</a>)
+    or supplements (everything else).
+  </p>
+
+  <div class="connects-box">
+    Most commonly confused with <a href="concept_cors.html">CORS</a> —
+    see the <a href="concept_how_they_connect.html">connections hub</a>
+    for the exact wrong statement this produces.
+  </div>
+
+  <p style="margin-top:2rem;">
+    <a href="concept_how_they_connect.html">← All five policies, connected</a> ·
+    <a href="concept_cors.html">Next: CORS →</a>
+  </p>
+</div>

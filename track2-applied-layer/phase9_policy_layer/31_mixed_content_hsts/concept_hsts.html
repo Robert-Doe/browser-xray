@@ -1,0 +1,48 @@
+<title>Concept: HSTS</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#2fae9e;--accent-dim:#0f3a37;}</style>
+
+<div class="page">
+  <span class="module-badge">VOCABULARY WEB · MODULE 31 · TERM 5 OF 5</span>
+  <h1>HSTS (HTTP Strict Transport Security)</h1>
+
+  <div class="analogy-box">
+    Every other term on this page assumes the envelope genuinely
+    reached the right building through a real, private courier. HSTS
+    is the rule that makes sure the courier NEVER takes the old,
+    unlocked delivery route again, once you've told it not to — it
+    operates one full layer below all four other policies, before any
+    of their questions are even relevant.
+  </div>
+
+  <p>
+    HSTS is a browser-enforced policy, learned from a
+    <code>Strict-Transport-Security</code> response header, that
+    rewrites future <code>http://</code> requests to a host into
+    <code>https://</code> BEFORE any network request is made at all.
+    Module 31 proved the ordering directly: the rewrite happens
+    client-side, pre-flight — never as a server-side redirect an
+    attacker could still intercept the first plaintext request before.
+  </p>
+  <p>
+    HSTS is checked FIRST, before any of the other four policies on
+    this page even become relevant — <a href="concept_sop.html">SOP</a>,
+    <a href="concept_cors.html">CORS</a>,
+    <a href="concept_samesite.html">SameSite</a>, and
+    <a href="concept_csp.html">CSP</a> all implicitly assume the
+    connection itself wasn't already silently downgraded.
+  </p>
+
+  <div class="connects-box">
+    Often lumped in with generic "HTTPS stuff" — HSTS is specifically
+    about preventing DOWNGRADE, not about encryption itself (that's
+    TLS's job, Module 15). See the
+    <a href="concept_how_they_connect.html">connections hub</a> for the
+    complete five-policy picture.
+  </div>
+
+  <p style="margin-top:2rem;">
+    <a href="concept_csp.html">← Previous: CSP</a> ·
+    <a href="concept_how_they_connect.html">All five policies, connected →</a>
+  </p>
+</div>

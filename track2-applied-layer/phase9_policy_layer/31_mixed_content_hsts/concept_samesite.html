@@ -1,0 +1,46 @@
+<title>Concept: SameSite</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#2fae9e;--accent-dim:#0f3a37;}</style>
+
+<div class="page">
+  <span class="module-badge">VOCABULARY WEB · MODULE 31 · TERM 3 OF 5</span>
+  <h1>SameSite (Cookie Attribute)</h1>
+
+  <div class="analogy-box">
+    <a href="concept_sop.html">SOP</a> and <a href="concept_cors.html">CORS</a>
+    are both about who's allowed to OPEN mail. SameSite is a completely
+    different question: whether your signature (a cookie) gets attached
+    to a letter someone ELSE wrote and mailed on your behalf, without
+    you ever seeing it.
+  </div>
+
+  <p>
+    SameSite is a per-cookie attribute (<code>Strict</code>,
+    <code>Lax</code>, or <code>None</code>) controlling whether that
+    cookie rides along on a cross-site request. Module 29 proved its
+    real, precise rules: <code>Lax</code> specifically requires BOTH a
+    top-level navigation AND a safe method — losing either condition
+    withholds the cookie, even cross-site.
+  </p>
+  <p>
+    Module 32 showed exactly why this matters independent of SOP/CORS:
+    a CSRF attack never needs to READ any response at all — it only
+    needs the victim's cookie to ride along on a request the attacker's
+    page triggers, which is precisely what SameSite governs and neither
+    SOP nor CORS ever touches.
+  </p>
+
+  <div class="connects-box">
+    Frequently confused with <a href="concept_sop.html">SOP</a>'s
+    "same-origin" concept — SameSite uses the LOOSER "same-site"
+    (registrable domain) comparison instead. See the
+    <a href="concept_how_they_connect.html">connections hub</a> for the
+    exact wrong statement this produces.
+  </div>
+
+  <p style="margin-top:2rem;">
+    <a href="concept_cors.html">← Previous: CORS</a> ·
+    <a href="concept_how_they_connect.html">All five policies, connected</a> ·
+    <a href="concept_csp.html">Next: CSP →</a>
+  </p>
+</div>
