@@ -1,0 +1,208 @@
+<title>Module 28: event_loop_microtasks — Two Lines, No Threads</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#2fc7a3;--accent-dim:#0f4737;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 2 · PHASE 8 · MODULE 28 · PHASE FINALE</span>
+  <h1>event_loop_microtasks</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: JS concurrency is single-threaded, cooperative scheduling
+    via two distinctly-draining queues — verified against the exact,
+    full, well-known real ordering of a deliberately tricky scenario.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../27_bytecode_vm/tutorial.html">Module 27: bytecode_vm</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A single bank teller serves one customer completely before calling
+    the next — no interruptions, no parallel service, just one queue
+    at a time, worked strictly in order. But this teller has TWO
+    trays: an "urgent" tray and a regular line. The rule is absolute:
+    after finishing with whoever's currently at the window, check the
+    urgent tray and completely empty it — every single slip, including
+    any NEW urgent slip someone drops in while the teller is still
+    working through the tray — before calling the next person from the
+    regular line. There's still only one teller, doing one thing at a
+    time. The "urgent tray always fully empties first" rule is the
+    entire trick — no actual parallelism required.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>The script's own top-level code runs immediately, synchronously
+    — <code>script start</code> and <code>script end</code> both happen
+    before the event loop does anything at all.</li>
+    <li>Along the way, some callbacks are queued as MACROTASKS
+    (<code>setTimeout</code>), others as MICROTASKS
+    (<code>Promise.then</code>).</li>
+    <li>Once the script's synchronous code finishes, the event loop
+    fully drains the microtask queue — running every microtask,
+    including any new ones queued by microtasks that just ran.</li>
+    <li>Only then does the FIRST macrotask run — followed immediately
+    by another full microtask drain, then the next macrotask, and so on.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>Actual execution order:
+
+  1. sync: script start
+  2. sync: script end
+  3. microtask: promise 1
+  ...
+  5. microtask: promise 2
+  ...
+  7. microtask: promise 3
+  ...
+  9. macrotask: setTimeout 1
+  ...
+  11. macrotask: setTimeout 2
+
+Matches real JS's well-known ordering? True</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output — including "promise 3," which only gets
+    QUEUED while "promise 2" is already running, mid-drain.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>def _drain_microtasks(self):
+    while self.microtasks:
+        callback, label = self.microtasks.popleft()
+        callback()  # might queue MORE microtasks -- the while loop will see them</code></pre>
+  <p>
+    That <code>while self.microtasks:</code> — re-checked every single
+    iteration, not a fixed count taken up front — is the entire
+    mechanism. It's what lets "promise 2" queue "promise 3" mid-drain
+    and still have "promise 3" run before either <code>setTimeout</code>
+    callback, exactly matching real JS.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Model real <code>Promise</code> objects or a real
+        <code>setTimeout</code> with actual delays — callbacks are
+        queued directly via this module's own API</li>
+        <li>Model real multi-threaded Web Workers, which genuinely DO
+        run in parallel, communicating with the main thread's event
+        loop via message passing</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Predict the exact execution order of a mix of synchronous
+        code, Promises, and <code>setTimeout</code> calls</li>
+        <li>Explain precisely why "microtasks run before macrotasks"
+        is not just a rule to memorize but a direct consequence of one
+        specific draining loop</li>
+        <li>Explain why JS never needs locks/mutexes for its own
+        single-threaded code, unlike genuinely parallel systems</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track2-applied-layer/phase8_js_engine/28_event_loop_microtasks
+python run_event_loop_demo.py</code></pre>
+
+  <div class="callout">
+    If you modify the demo and the final "Matches real JS's well-known
+    ordering?" check prints <code>False</code>: print
+    <code>loop.log</code> directly and compare line-by-line against
+    what you changed — a very common mistake is queuing a new
+    microtask AFTER calling <code>loop.run()</code> has already started
+    draining a DIFFERENT queue than you expected.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      Suppose a microtask callback queued ANOTHER microtask, which
+      queued ANOTHER, which queued another — forever, with no
+      terminating condition. Using this module's exact `_drain_microtasks`
+      loop, what would actually happen? Would any macrotask (like a
+      `setTimeout`) EVER get to run? Think it through before revealing
+      the answer.
+    </summary>
+    <div class="answer">
+      No macrotask would ever run — the `while self.microtasks:` loop
+      would spin forever, since a microtask that always queues another
+      microtask means the queue is NEVER empty, and the draining rule
+      is "keep going until it's empty," not "run for a while and then
+      move on regardless." This is a real, well-known phenomenon in
+      actual browsers too — an infinite microtask-queuing loop
+      genuinely starves the event loop, freezing the page (no
+      rendering, no `setTimeout` callbacks, no user input handling)
+      because the browser's real event loop has this exact same "fully
+      drain microtasks before anything else" rule. This is precisely
+      why real JS style guides warn against unbounded recursive
+      Promise chains with no escape condition — it's not a performance
+      suggestion, it's a correctness hazard with the same mechanism
+      this module just proved.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why does `setTimeout(fn, 0)` not run immediately, if the delay
+    is zero?</dt>
+    <dd>Because "0ms delay" only means "as soon as possible, given
+    macrotask scheduling rules" — it still has to wait for the current
+    synchronous code to finish AND for the entire microtask queue to
+    drain first, exactly as this module's captured output shows. Zero
+    delay was never a promise of immediate execution.</dd>
+
+    <dt>Is this why JS doesn't need thread locks/mutexes for its own
+    code?</dt>
+    <dd>Yes, precisely — since only one callback ever runs at a time,
+    with no true parallel execution of JS code itself, there's no
+    possibility of two pieces of JS simultaneously reading/writing the
+    same variable in a genuinely racy way. (Real browsers DO have
+    actual parallelism elsewhere — separate processes/threads for
+    rendering, networking, etc. — but JS's own single-threaded
+    execution model on the main thread is exactly why THIS specific
+    class of bug doesn't apply to plain JS code the way it does in
+    genuinely multi-threaded languages.)</dd>
+
+    <dt>What's the real-world difference between a microtask and a
+    macrotask, beyond the draining rule?</dt>
+    <dd>Practically: microtasks (Promises, `queueMicrotask`) are meant
+    for "finish this unit of asynchronous work as soon as possible,"
+    while macrotasks (`setTimeout`, I/O callbacks, UI events) represent
+    genuinely separate, later "ticks" of the event loop — allowing the
+    browser to do other things (like rendering a frame) between
+    macrotasks, but never between microtasks in the same drain.</dd>
+
+    <dt>Could a page's rendering happen in between microtasks, the way
+    it can between macrotasks?</dt>
+    <dd>No — real browsers specifically render between macrotasks (or
+    between animation frames), never in the middle of a microtask
+    drain, which is exactly why an unbounded microtask loop (this
+    module's Brain Exercise) freezes the page's visuals entirely, not
+    just its `setTimeout` callbacks.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    <strong>Phase 8 (JavaScript Engine Internals) is complete.</strong>
+    You've built a lexer, a parser, two different execution strategies,
+    and the scheduling model that ties it all together. Phase 9 turns
+    to the browser's own security policy layer: Module 29 starts with
+    cookies and the `SameSite` attribute — a browser-enforced boundary
+    that's easy to confuse with the Same-Origin Policy (Module 17) but
+    is genuinely, precisely different.
+  </p>
+
+  <div class="module-footer">
+    <a href="../27_bytecode_vm/tutorial.html">← Module 27: bytecode_vm</a>
+    <a href="../../phase9_policy_layer/29_cookies_samesite/tutorial.html">Module 29: cookies_samesite →</a>
+  </div>
+</div>
