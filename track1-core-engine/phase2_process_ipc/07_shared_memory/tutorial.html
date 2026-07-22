@@ -1,0 +1,210 @@
+<title>Module 7: shared_memory — The One Deliberate Exception</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#3fae8a;--accent-dim:#173a2d;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 1 · PHASE 2 · MODULE 07</span>
+  <h1>shared_memory</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: shared memory is the one deliberate exception to process
+    isolation — two processes really do see the same physical bytes,
+    live, no copying — and that "must be opted into by both sides" has
+    a sharper, quieter failure mode here than it did for pipes and
+    sockets.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../../../prerequisites/07_ipc_channels.html#shared-vs-message-passing">shared memory vs. message passing</a>
+    <a class="tag-link" href="../../../prerequisites/01_virtual_memory.html#address-space">virtual address space</a>
+    <a class="tag-link" href="../06_pipes_and_sockets/tutorial.html">Module 6: pipes_and_sockets</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    Module 6's pipes and sockets were like a walkie-talkie: you speak,
+    it's relayed, the other person hears a copy of your words a moment
+    later. Shared memory is like two people writing on the same
+    physical whiteboard, from two different rooms, through a shared wall
+    with a hole cut exactly to line up — anything either of them writes
+    is just <em>there</em>, immediately, for the other to see, no
+    "sending" involved. But there's a catch this analogy demands you
+    notice: that hole in the wall only exists if both rooms' builders
+    agreed on its exact location. Get the measurement wrong by an inch,
+    and each room quietly gets its own solid, private wall instead —
+    with no alarm going off telling either builder they missed.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>The writer process creates a named, pagefile-backed shared
+    memory segment — Windows' <code>CreateFileMapping</code>, wrapped by
+    Python's <code>mmap</code> module — and writes a string into it.</li>
+    <li>The reader process maps a segment using the <em>same</em> name.</li>
+    <li>Windows hands the reader a view onto the <em>same physical
+    pages</em> the writer is using — not a copy.</li>
+    <li>The reader sees the writer's string immediately upon mapping,
+    with zero message-passing calls involved.</li>
+    <li>The reader writes its own string into the same segment.</li>
+    <li>The still-running writer reads the segment again and sees the
+    reader's update.</li>
+    <li>Separately, a second reader maps a <em>slightly different</em>
+    name — and gets its own private, empty segment, with no error at all.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>=== Part A: writer and reader agree on the same tagname ===
+[reader] bytes found immediately upon mapping: b'hello from the writer'
+[reader] wrote back: b'hello back from the reader'
+[writer] final contents just before exit: b'hello back from the reader'
+
+=== Part B: writer and reader use DIFFERENT tagnames (a typo) ===
+[reader] bytes found immediately upon mapping: b''
+[analysis] the reader did NOT see the writer's string, and got NO error --
+it silently mapped its own separate, zero-filled segment under the
+mismatched name.</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output. Part A: genuine live, bidirectional sharing.
+    Part B: a name mismatch that produces silence, not an error.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>segment = mmap.mmap(-1, SIZE, tagname=tagname)
+current = bytes(segment[:64]).split(b"\x00", 1)[0]</code></pre>
+  <p>
+    The <code>-1</code> file descriptor tells <code>mmap</code> "back
+    this with the system paging file, not a real file on disk" — this
+    is what makes it pure shared memory rather than a shared-file
+    mapping. Under the hood this is Windows'
+    <code>CreateFileMapping(INVALID_HANDLE_VALUE, ...)</code> followed
+    by <code>MapViewOfFile</code>, the same pair of calls a C or C++
+    program would use directly. Python's standard library is calling
+    the real OS mechanism, not simulating sharing at the language level.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Coordinate <em>when</em> it's safe to read vs. write shared
+        memory (this module's Part A worked because of orchestration
+        timing, not real synchronization — a production system needs
+        locks/atomics/events, which this module doesn't build)</li>
+        <li>Model an entire toy Browser Process ↔ Renderer Process link
+        (Module 8 — and note it will use message passing, not shared
+        memory, for exactly the trust-boundary reasons in Prerequisite 7)</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Explain, with captured evidence, what "no copy, same
+        physical memory" actually means in practice</li>
+        <li>Identify the specific, quiet failure mode shared memory has
+        that message-passing IPC doesn't</li>
+        <li>Explain why a security-sensitive process boundary would
+        deliberately avoid shared memory even though it's faster</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track1-core-engine/phase2_process_ipc/07_shared_memory
+python run_shared_memory_demo.py</code></pre>
+
+  <div class="callout">
+    If Part A shows the reader NOT seeing the writer's string: check
+    the timing — the orchestrator gives the writer 0.4 seconds to
+    create and write to the segment before the reader starts. On a very
+    loaded machine that might not be enough; this is a real, acknowledged
+    fragility of the fixed-sleep approach, discussed in
+    <code>DECISIONS.md</code>.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      Given what Part B just showed — a name mismatch silently produces
+      two unrelated private segments, no error — would you expect this
+      class of bug to be EASIER or HARDER to debug in a real system than
+      a Module-6-style "connection refused" bug? Think about what each
+      failure actually looks like to a developer before revealing the
+      answer.
+    </summary>
+    <div class="answer">
+      Harder — often much harder. A "connection refused" error points
+      you almost directly at the problem: something threw an exception,
+      with a clear message, at the exact moment the mismatch mattered.
+      A shared-memory name mismatch produces no exception anywhere.
+      Instead, you get a program that runs "successfully," produces
+      wrong or stale-looking results, and gives no direct signal about
+      why. You'd likely spend time suspecting a logic bug, a race
+      condition, or stale caching before ever suspecting "these two
+      components are silently talking to two different memory regions."
+      This is a genuinely important, transferable debugging instinct:
+      failure modes that are silent and "successful-looking" are
+      systematically more expensive to diagnose than failure modes that
+      throw loudly — which is itself a real argument, independent of
+      raw performance, for when a system design should prefer explicit
+      message-passing over shared memory even at some cost.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why didn't the demo need any locks, if shared memory needs its
+    own synchronization?</dt>
+    <dd>It got away without one because the orchestrator's fixed sleeps
+    happened to serialize the reads and writes correctly for this
+    specific, controlled demo — which is exactly the kind of fragile
+    "it worked, this time, in this order" situation real synchronization
+    primitives (mutexes, atomics, events) exist to make robust instead
+    of lucky. This module intentionally doesn't build that layer, to
+    keep the sharing behavior itself the sole focus.</dd>
+
+    <dt>What's the difference between <code>Local\</code> and
+    <code>Global\</code> namespaces?</dt>
+    <dd><code>Local\</code> scopes the shared segment to the current
+    login session — the normal, least-privileged choice, and what this
+    module uses. <code>Global\</code> makes it visible system-wide,
+    across all user sessions, and typically requires the
+    <code>SeCreateGlobalPrivilege</code> right — appropriate only when
+    you genuinely need cross-session sharing (uncommon for ordinary
+    applications).</dd>
+
+    <dt>Does real Chromium use shared memory like this?</dt>
+    <dd>Yes, extensively — for exactly the performance reason this
+    module's analogy hints at. Bulk data that would be expensive to
+    copy repeatedly (e.g. some rendering/compositing buffers) is passed
+    via shared memory regions, while control messages and anything
+    crossing a real trust boundary typically go over Mojo's
+    message-passing channels instead. The choice between the two, per
+    channel, is a deliberate performance/trust tradeoff — not an
+    accident.</dd>
+
+    <dt>Is the "silent mismatch" behavior specific to Python's
+    <code>mmap</code>, or is it Windows itself?</dt>
+    <dd>It's Windows itself — <code>mmap</code> is a thin wrapper here.
+    <code>CreateFileMapping</code> is documented to create a new section
+    if the named one doesn't already exist, rather than failing. This
+    module's Part B is demonstrating real OS behavior, verified
+    directly, not a Python-specific quirk.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You've now built and understood both families of IPC this course
+    needs. Module 8 puts them to work: a real, minimal toy browser —
+    one Browser Process, spawning Renderer Process children, exchanging
+    structured "load this URL" messages over exactly the kind of channel
+    Module 6 proved — the seed every later Track 2 module builds on top of.
+  </p>
+
+  <div class="module-footer">
+    <a href="../06_pipes_and_sockets/tutorial.html">← Module 06: pipes_and_sockets</a>
+    <a href="../08_toy_browser_shell/tutorial.html">Module 08: toy_browser_shell →</a>
+  </div>
+</div>
