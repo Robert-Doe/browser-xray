@@ -1,0 +1,221 @@
+<title>Module 20: dom_tree_builder — Auto-Close Isn't Magic, It's a Stack</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#c73f6f;--accent-dim:#3f1729;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 2 · PHASE 6 · MODULE 20</span>
+  <h1>dom_tree_builder</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: the DOM tree is assembled incrementally from a flat token
+    stream via a stack of open elements — and that "browsers
+    auto-close my unclosed tags" is one specific, mechanical,
+    explainable consequence of that stack, not a vague act of goodwill.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../19_html_tokenizer/tutorial.html">Module 19: html_tokenizer</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A single elevator serves an office building, and at any moment,
+    it's only ever "at" one specific floor — that's where anyone
+    getting in right now will end up. Someone pressing a button for
+    Floor 2 doesn't need to know or care that a moment ago the elevator
+    was on Floor 5, or how it got down to 2 — all that matters is where
+    it is <em>right now</em>. A stack of open elements works exactly
+    like that elevator's current floor: at every moment during parsing,
+    there's exactly one "current" node new content gets inserted into,
+    and specific, simple rules govern when the elevator moves — some
+    of them surprisingly, like automatically heading back down a floor
+    the instant certain buttons get pressed, whether or not anyone
+    asked for that in so many words.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>A stack starts with just the document at the bottom.</li>
+    <li>A <code>StartTag</code> token creates a new element, appends
+    it as a child of whatever's currently on TOP of the stack, then
+    pushes itself onto the stack (becoming the new "current" insertion
+    point) — unless it's a void element like <code>&lt;img&gt;</code>,
+    which can never contain anything, so it's never pushed.</li>
+    <li>Before that push, one specific check runs: is the CURRENT top
+    of the stack a <code>&lt;p&gt;</code> and the new tag is ALSO
+    <code>&lt;p&gt;</code>? If so, pop the old one first — the real,
+    famous auto-close rule.</li>
+    <li>An <code>EndTag</code> token scans down the stack for a
+    matching element, and — if found — removes it AND everything still
+    open above it.</li>
+    <li><code>Character</code> and <code>Comment</code> tokens simply
+    attach as children of whatever's currently on top.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>=== auto-close <p>: a new <p> implicitly closes the previous one ===
+input: '<p>1<p>2'
+#document
+  <p>
+    #text '1'
+  <p>
+    #text '2'
+
+=== an ancestor's end tag implicitly closes a still-open descendant ===
+input: '<div><span>text</div>after'
+#document
+  <div>
+    <span>
+      #text 'text'
+  #text 'after'
+
+=== an end tag with no matching open element is simply ignored ===
+input: '<p>hello</span></p>'
+#document
+  <p>
+    #text 'hello'</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured trees. Note "after" landing OUTSIDE the div in the
+    second case — proof the div's end tag genuinely closed everything
+    still open above it, not just the div itself.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>top = stack[-1]
+if isinstance(top, Element) and top.tag in AUTO_CLOSE_ON_OPEN.get(token.name, ()):
+    stack.pop()  # the real, observable "auto-close" behavior
+
+element = Element(tag=token.name, attributes=dict(token.attributes))
+current().children.append(element)
+if token.name not in VOID_ELEMENTS and not token.self_closing:
+    stack.append(element)</code></pre>
+  <p>
+    "Browsers are forgiving about unclosed <code>&lt;p&gt;</code> tags"
+    is usually stated as a vague fact. Here it's four lines: check the
+    top of a stack, maybe pop it, append a child, maybe push. Nothing
+    about it is a special case bolted onto an otherwise-strict parser
+    — it's the SAME mechanism every single element uses to get inserted
+    at all.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Handle the real spec's full "scope" algorithm — this
+        module checks only the immediate top of the stack, not the
+        deeper scope-boundary rules real browsers use for edge cases</li>
+        <li>Apply any styling to this tree — it has structure, but zero
+        visual properties yet (Module 21 starts building CSS on top)</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Explain precisely, mechanically, why <code>&lt;p&gt;1&lt;p&gt;2</code>
+        produces two paragraphs, not one nested inside the other</li>
+        <li>Predict what happens to still-open descendants when an
+        ancestor's end tag is reached</li>
+        <li>Explain why some malformed end tags simply vanish with no
+        visible effect at all</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track2-applied-layer/phase6_parsing_dom/20_dom_tree_builder
+python run_tree_demo.py</code></pre>
+
+  <div class="callout">
+    If a tree looks unexpectedly flat or over-nested: check whether the
+    tag you're testing is in <code>VOID_ELEMENTS</code> — a void
+    element is deliberately never pushed onto the stack, so anything
+    written as if it were "inside" one (e.g., text right after
+    <code>&lt;img&gt;</code> with no other wrapping tag) will actually
+    attach to whatever element ENCLOSES the void element, not to the
+    void element itself.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      Given this module's stack-based mechanism, what would you expect
+      from `<b><i>text</b></i>` — an end tag that closes tags in the
+      WRONG order relative to how they were opened? Walk through the
+      stack yourself before revealing the answer.
+    </summary>
+    <div class="answer">
+      Following this module's exact rule (scan down for a match, remove
+      it AND everything still open above it): `<b>` opens, pushed.
+      `<i>` opens, pushed (stack: b, i). "text" attaches to `<i>`.
+      `</b>` scans down, finds `<b>` at the BOTTOM of these two — and
+      removes it AND everything above it, meaning `<i>` gets closed too,
+      even though `</i>` was never actually seen yet. Then the
+      subsequent `</i>` finds no open `<i>` anywhere in the stack
+      (it was already removed) and is silently ignored. The practical
+      result: both tags end up closed at the point `</b>` appeared, and
+      the final stray `</i>` does nothing. This is a real, simplified
+      version of a genuinely famous, gnarly area of the HTML5 spec —
+      misnested formatting elements are handled by something called the
+      "adoption agency algorithm," which is significantly more
+      sophisticated than this module's plain stack-unwinding (it can, in
+      some cases, actually reconstruct and duplicate formatting elements
+      to preserve the AUTHOR's likely intent, rather than just dropping
+      the mismatch). This module's simplified behavior is honest and
+      spec-accurate for the common cases it targets, but the adoption
+      agency algorithm's full behavior is explicitly out of this
+      module's scope.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why is it called a "stack of open elements" specifically?</dt>
+    <dd>Because it behaves exactly like the data structure of that
+    name: elements are pushed on top when opened, popped off the top
+    (or from wherever a match is found, removing everything above it
+    too) when closed, and the top of the stack is always "where we
+    currently are" in the tree — first-in-last-out ordering, the
+    defining property of a stack.</dd>
+
+    <dt>Does every HTML element have an auto-close rule like `<p>` and
+    `<li>`?</dt>
+    <dd>No — only specific elements have specific, spec-defined
+    auto-close relationships (this module implements two of the most
+    well-known ones). Most elements have no such rule at all and simply
+    nest however they're written, or get left open until an explicit
+    matching end tag or EOF.</dd>
+
+    <dt>Why does a void element like `<img>` still get appended to the
+    tree, if it's never pushed onto the stack?</dt>
+    <dd>Because it's still a real node in the tree — a `<img>` element
+    exists and has attributes (like `src`) even though nothing can be
+    "inside" it. Not pushing it only means the NEXT piece of content
+    won't be mistakenly nested inside it — the element itself is
+    unaffected.</dd>
+
+    <dt>Is this module's tree the same shape a real browser's
+    DevTools "Elements" panel would show for the same HTML?</dt>
+    <dd>For every case this module actually tests, yes — the shapes
+    shown here match real browser behavior. For deeper edge cases
+    involving the full scope algorithm or the adoption agency algorithm
+    (see the Brain Exercise), a real browser's tree could differ from
+    this module's simplified version.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You have a real tree now — structure, but no appearance. Module 21
+    builds the other half of what a page needs before anything can be
+    drawn: a real CSS tokenizer and parser, producing the CSSOM as its
+    own independent tree, parsed completely separately from the DOM.
+  </p>
+
+  <div class="module-footer">
+    <a href="../19_html_tokenizer/tutorial.html">← Module 19: html_tokenizer</a>
+    <a href="../21_css_parser_cssom/tutorial.html">Module 21: css_parser_cssom →</a>
+  </div>
+</div>
