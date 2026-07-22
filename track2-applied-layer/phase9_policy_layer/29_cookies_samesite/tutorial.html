@@ -1,0 +1,207 @@
+<title>Module 29: cookies_samesite — Site, Not Origin, and It Depends on Context</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#4fae5f;--accent-dim:#1a3a20;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 2 · PHASE 9 · MODULE 29 · FIRST POLICY-LAYER MODULE</span>
+  <h1>cookies_samesite</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: SameSite is a browser-enforced boundary based on
+    registrable domain ("site," not exact origin) — and that its real
+    rules depend on BOTH cross-site status AND request context
+    (top-level navigation vs. subresource, safe vs. unsafe method)
+    together, not a single simplified axis.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../../../prerequisites/08_origins_and_urls.html#same-origin-same-site">same-origin vs. same-site</a>
+    <a class="tag-link" href="../../phase5_networking/17_origin_model_sop/tutorial.html">Module 17: origin_model_sop</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    A family owns several storefronts across town, all under the same
+    registered business name — a bakery, a café, a catering office —
+    each a different building, but unmistakably "the same outfit" to
+    anyone checking business records. A courier delivering BETWEEN
+    those storefronts is trusted more loosely than one arriving from a
+    complete stranger's shop across the street, even if the stranger's
+    shop happens to be right next door. "Same business" (same-site) is
+    a coarser, business-registry-level check than "exact same building"
+    (same-origin) — and crucially, how much a delivery is trusted also
+    depends on HOW it arrives: someone walking in the front door in
+    person (a top-level navigation) is treated differently than a
+    parcel slipped through a mail slot from outside (a background
+    subresource request), even from the identical outside sender.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>A cookie is set with a <code>SameSite</code> value: Strict,
+    Lax, or None.</li>
+    <li>When a request is about to be sent, the browser computes the
+    REGISTRABLE DOMAIN of both the requesting page and the target —
+    using a Public Suffix List to correctly handle multi-label suffixes
+    like <code>.co.uk</code>.</li>
+    <li>If they match (same-site), every cookie for the target is
+    attached, regardless of its SameSite value.</li>
+    <li>If they don't match (cross-site), the decision gets more
+    specific: <code>None</code> cookies always go; <code>Strict</code>
+    cookies never go; <code>Lax</code> cookies go ONLY if this is a
+    top-level navigation using a safe method (GET/HEAD) — never for a
+    background subresource request, and never for an unsafe method like
+    POST, even from a top-level navigation.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>Same-site request (app.bank.example.com -> bank.example.com), top-level GET
+    cookies attached: ['lax_session', 'none_session', 'strict_session']
+
+Cross-site TOP-LEVEL navigation (evil.com -> bank.example.com), GET
+    cookies attached: ['lax_session', 'none_session']
+
+Cross-site SUBRESOURCE/XHR request (evil.com -> bank.example.com), GET
+    cookies attached: ['none_session']
+
+Cross-site TOP-LEVEL navigation via POST (e.g. an auto-submitting form)
+    cookies attached: ['none_session']</pre>
+  </div>
+  <div class="diagram-caption">
+    Real, captured output. The same "Lax" cookie behaves differently
+    across the last three rows — same cross-site relationship, three
+    genuinely different request contexts.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>if cookie.same_site == "None":
+    attached.append(cookie)
+elif cookie.same_site == "Lax" and is_top_level_navigation and safe_method:
+    attached.append(cookie)
+# Strict: never attached cross-site, no exceptions.</code></pre>
+  <p>
+    Notice <code>Lax</code> requires TWO conditions joined with
+    <code>and</code> — top-level navigation AND a safe method. Losing
+    either one changes the outcome, exactly as the captured output's
+    last two rows show: dropping "top-level" (subresource request) or
+    dropping "safe method" (POST) both independently cause the Lax
+    cookie to be withheld.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Compute registrable domains against the real, full Public
+        Suffix List — only a tiny, illustrative subset is hardcoded</li>
+        <li>Model the `Domain` cookie attribute's broader
+        subdomain-scoping — cookies here match one exact host only</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>Predict exactly which cookies a given request context will
+        carry, for any combination of SameSite value, cross-site
+        status, navigation type, and method</li>
+        <li>Correctly compute a registrable domain, including
+        multi-label suffix cases like <code>.co.uk</code>, that a naive
+        "last two labels" approach gets wrong</li>
+        <li>Explain precisely why SameSite and the Same-Origin Policy
+        (Module 17) are related but genuinely different mechanisms</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track2-applied-layer/phase9_policy_layer/29_cookies_samesite
+python run_cookie_demo.py</code></pre>
+
+  <div class="callout">
+    If a same-site scenario UNEXPECTEDLY drops a cookie: check that
+    both hostnames actually reduce to the SAME registrable domain under
+    this module's small, hardcoded suffix list
+    (<code>same_site.KNOWN_PUBLIC_SUFFIXES</code>) — this exact mistake
+    happened while building this module (see <code>DECISIONS.md</code>):
+    test hostnames using a suffix NOT in that list will silently be
+    treated as their own, unique "site."
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      Given everything this module just proved, would a `SameSite=Lax`
+      cookie be sent along with a cross-site image tag
+      (`&lt;img src="https://bank.example.com/logo.png"&gt;`) embedded on
+      `evil.com`'s page? Reason through which category that request
+      falls into before revealing the answer.
+    </summary>
+    <div class="answer">
+      No — an `<img>` tag's request is a SUBRESOURCE request (the
+      browser fetching an image to display within `evil.com`'s own
+      page), not a top-level navigation (the user's address bar
+      actually going to `bank.example.com`). This module's own captured
+      "Cross-site SUBRESOURCE/XHR request" row shows exactly this case:
+      only the `None` cookie is attached; `Lax` is withheld. This is a
+      real, deliberate part of why `SameSite=Lax` (the real browser
+      DEFAULT for cookies that don't specify a value at all, in modern
+      browsers) meaningfully reduces cross-site cookie leakage risk for
+      embedded resources like images, scripts, and iframes, while still
+      allowing a cookie to work normally when a user directly clicks a
+      link or types a URL that lands on the site.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Is "same-site" the same thing as "same-origin"?</dt>
+    <dd>No — this is one of the most commonly conflated pairs in web
+    security. Same-origin (Module 17) requires scheme, host, AND port
+    to match exactly. Same-site only compares the registrable domain —
+    `https://a.example.com` and `https://b.example.com` are NOT
+    same-origin (different hosts) but ARE same-site (same registrable
+    domain, `example.com`).</dd>
+
+    <dt>Why does `SameSite=None` require `Secure`?</dt>
+    <dd>Because a cookie marked `None` is telling the browser "send me
+    on every cross-site request, no restriction" — if that were also
+    allowed over plain HTTP, the cookie could be trivially intercepted
+    by anyone on the network path. Requiring `Secure` (HTTPS-only)
+    alongside `None` is a real, deliberate browser safeguard against
+    exactly that.</dd>
+
+    <dt>Why is `co.uk` a tricky case for computing a registrable
+    domain?</dt>
+    <dd>Because a naive "take the last two labels" approach would treat
+    `example.co.uk` as though `co.uk` were the registrable part and
+    `example` were a subdomain of it — but `co.uk` isn't independently
+    registrable; `example.co.uk` (three labels) is the actual
+    registrable domain. Getting this wrong would incorrectly treat
+    `bank.co.uk` and `evil.co.uk` as "same-site" just because they share
+    a `.co.uk` suffix, which is precisely the kind of mistake a real
+    Public Suffix List exists to prevent.</dd>
+
+    <dt>Does the SERVER or the BROWSER decide whether a cookie gets
+    attached?</dt>
+    <dd>The server only ever DECLARES a cookie's SameSite value when
+    setting it. Every single enforcement decision at REQUEST time —
+    checking same-site status, navigation type, and method — happens
+    entirely in the browser, the same "browser enforces, not the
+    server" pattern Module 17 established for the Same-Origin Policy.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    Module 30 adds a different kind of browser-enforced policy: instead
+    of deciding which requests carry which cookies, CSP decides which
+    scripts and resources a page is even ALLOWED to load or run at all
+    — checked before execution, not after a response comes back.
+  </p>
+
+  <div class="module-footer">
+    <a href="../../phase8_js_engine/28_event_loop_microtasks/tutorial.html">← Module 28: event_loop_microtasks</a>
+    <a href="../30_csp_enforcement/tutorial.html">Module 30: csp_enforcement →</a>
+  </div>
+</div>
