@@ -1,0 +1,228 @@
+<title>Module 2: privilege_rings — The CPU Says No, Not the OS</title>
+<link rel="stylesheet" href="../../../assets/design-system.css">
+<style>body{--accent:#5b9bd5;--accent-dim:#1f3a52;}</style>
+
+<div class="page">
+  <span class="module-badge">TRACK 1 · PHASE 1 · MODULE 02</span>
+  <h1>privilege_rings</h1>
+  <p style="color:var(--fg-dim); margin-top:-0.8rem;">
+    Proves: user-mode (Ring 3) code physically cannot execute a
+    privileged CPU instruction — the CPU itself refuses, before the
+    instruction has any effect, with no OS intervention required.
+  </p>
+
+  <h2><span class="num">00</span>Prerequisites</h2>
+  <div class="tag-links">
+    <a class="tag-link" href="../../../prerequisites/02_privilege_rings.html#ring0-ring3">Ring 0 vs Ring 3</a>
+    <a class="tag-link" href="../../../prerequisites/02_privilege_rings.html#mode-bit">hardware-enforced, not OS-enforced</a>
+    <a class="tag-link" href="../../../prerequisites/02_privilege_rings.html#trap">the trap into Ring 0</a>
+  </div>
+
+  <h2><span class="num">01</span>The Big Analogy</h2>
+  <div class="analogy-box">
+    Picture a car with a physical governor bolted to the engine that
+    hard-caps top speed at 65 mph — not a dashboard warning light, not a
+    software speed limiter you could argue with, an actual mechanical
+    stop that makes the engine physically incapable of turning faster
+    than that. You can floor the pedal all you want; the request never
+    even reaches "the engine ignoring you," because the fuel simply
+    doesn't get there past that RPM. That's the difference between a
+    rule and a hardware boundary. A privileged instruction executed at
+    Ring 3 isn't "denied by policy" — the CPU's own decode logic checks
+    the current privilege level before the instruction can do anything,
+    and refuses at that exact moment, every time, unconditionally.
+  </div>
+
+  <h2><span class="num">02</span>What Happens, Step by Step</h2>
+  <ol class="steps">
+    <li>Python asks Windows for a page of memory and marks it
+    <code>PAGE_EXECUTE_READWRITE</code> — the OS grants it, because
+    allocating executable memory is itself an unprivileged, ordinary
+    request any Ring 3 process can make.</li>
+    <li>We hand-write raw machine code bytes into that page — e.g.
+    <code>0xFA</code>, the exact byte encoding of the CLI instruction.</li>
+    <li>We call into that page as if it were a normal function.</li>
+    <li>The CPU begins executing our bytes at Ring 3 (nothing has
+    changed our privilege level — we're still ordinary user code).</li>
+    <li>The CPU's instruction decoder reaches CLI, checks the Current
+    Privilege Level register, sees CPL=3, and raises a #GP (General
+    Protection) fault — <em>before</em> the interrupt flag is touched.</li>
+    <li>Windows' kernel-level fault handler catches this CPU exception
+    and translates it into <code>STATUS_PRIVILEGED_INSTRUCTION</code>,
+    delivered to our process as a structured exception.</li>
+    <li>CPython's <code>ctypes</code> module — which wraps every foreign
+    call in a Windows SEH frame specifically to catch exactly this kind
+    of fault — converts it into an ordinary Python
+    <code>OSError</code> we can catch.</li>
+  </ol>
+
+  <h2><span class="num">03</span>What We Actually Captured</h2>
+  <div class="diagram-box">
+<pre>instruction                                                   result
+------------------------------------------------------------------------------------------
+NOP  (no-op -- Ring 3 legal)                                  OK
+RDTSC (read timestamp counter -- Ring 3 legal by default)     OK
+CLI  (clear interrupt flag -- PRIVILEGED, Ring 0 only)        FAULT   <- exception: privileged instruction
+HLT  (halt the CPU -- PRIVILEGED, Ring 0 only)                FAULT   <- exception: privileged instruction</pre>
+  </div>
+  <div class="diagram-caption">
+    Real captured output. Two ordinary instructions ran cleanly. Two
+    privileged instructions faulted every time, with the exact same
+    "privileged instruction" message ctypes produces for
+    STATUS_PRIVILEGED_INSTRUCTION.
+  </div>
+
+  <h2><span class="num">04</span>The Code, Explained</h2>
+  <pre><code>INSTRUCTIONS = {
+    "NOP  (no-op -- Ring 3 legal)": bytes([0x90, 0xC3]),
+    "CLI  (clear interrupt flag -- PRIVILEGED, Ring 0 only)": bytes([0xFA, 0xC3]),
+    ...
+}
+
+def run_code(code: bytes):
+    addr = kernel32.VirtualAlloc(None, len(code), MEM_COMMIT | MEM_RESERVE,
+                                   PAGE_EXECUTE_READWRITE)
+    ctypes.memmove(addr, code, len(code))
+    func = ctypes.CFUNCTYPE(None)(addr)
+    try:
+        func()
+        return "OK", None
+    except OSError as e:
+        return "FAULT", str(e)</code></pre>
+  <p>
+    Every byte in <code>INSTRUCTIONS</code> is real x86-64 machine code
+    — <code>0xFA</code> isn't a stand-in or a symbol, it's the literal
+    encoding the CPU decodes as CLI. We write it into genuinely
+    executable memory and jump into it directly. There's no simulation
+    layer: this is your actual CPU deciding, in real time, whether to
+    allow or refuse each instruction based on the privilege level it's
+    currently running our code at.
+  </p>
+
+  <h2><span class="num">05</span>Limits / What You Cannot Do Yet</h2>
+  <div class="compare-box">
+    <div class="compare-col cant">
+      <h4>CAN'T DO YET</h4>
+      <ul>
+        <li>Explain <em>how</em> Ring 3 code legitimately gets the
+        kernel to do privileged work on its behalf (that's the syscall
+        mechanism — Module 3)</li>
+        <li>Say what happens if you're an Administrator (spoiler:
+        nothing changes here — admin rights are a kernel-side
+        permission concept, not a CPU ring; see the prerequisite
+        callout)</li>
+        <li>Reproduce this on a non-Windows OS without swapping the
+        exception-translation mechanism (SEH is Windows-specific)</li>
+      </ul>
+    </div>
+    <div class="compare-col can">
+      <h4>CAN DO NOW</h4>
+      <ul>
+        <li>State, with captured evidence, that privilege enforcement
+        is a hardware fact, not an OS courtesy</li>
+        <li>Identify a privileged vs. unprivileged instruction by
+        testing it directly</li>
+        <li>Explain why "my code was compromised" doesn't
+        automatically mean "the attacker has kernel access"</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">06</span>Run It</h2>
+  <pre><code>cd track1-core-engine/phase1_bare_metal/02_privilege_rings
+python ring_boundary_probe.py
+python privileged_instr_child.py</code></pre>
+  <p>
+    Expected: <code>ring_boundary_probe.py</code> prints the four-row
+    table above. <code>privileged_instr_child.py</code> prints one line
+    then crashes with an unhandled <code>OSError</code> traceback and
+    exits with code <code>1</code> — that traceback <em>is</em> the
+    expected, correct result.
+  </p>
+
+  <div class="callout">
+    If every instruction in the table says <code>OK</code>, including
+    CLI and HLT: you are almost certainly running this inside a
+    hypervisor/VM configuration or an emulation layer that isn't
+    faithfully trapping privileged instructions to a guest OS, or under
+    a debugger that's intercepting the exception before ctypes sees it.
+    A bare-metal or standard VM install of Windows should show exactly
+    the captured result above.
+  </div>
+
+  <h2><span class="num">07</span>Brain Exercise</h2>
+  <details class="brain-exercise">
+    <summary>
+      You're told a piece of malware achieved "arbitrary code
+      execution" inside a browser's renderer process. Does that alone
+      mean the malware can execute privileged instructions like CLI or
+      HLT? Reason it through before revealing the answer.
+    </summary>
+    <div class="answer">
+      No. "Arbitrary code execution" means the attacker can make the
+      <em>process</em> run instructions of their choosing — but that
+      process is still, unavoidably, running at whatever CPU privilege
+      level it started at. A browser renderer process runs at Ring 3
+      like any other user-mode process. The malware's injected code
+      inherits that same Ring 3 restriction — it can execute CLI all it
+      wants and the CPU will fault it exactly like our demo did. Getting
+      from "arbitrary Ring 3 code execution" to "Ring 0 access" requires
+      a genuinely separate exploit: either a bug in a system call's
+      kernel-side handling, or a bug in a device driver running in
+      kernel mode, or similar — it is never a free upgrade that comes
+      bundled with a renderer bug. This exact gap is why sandboxing
+      (Track 1, Phase 3) is valuable even against attackers who already
+      have full code execution inside the sandbox.
+    </div>
+  </details>
+
+  <h2><span class="num">08</span>There Are No Dumb Questions</h2>
+  <dl class="qa">
+    <dt>Why doesn't the process just crash silently instead of raising a
+    Python exception?</dt>
+    <dd>Because ctypes on Windows specifically wraps foreign-function
+    calls in SEH (Structured Exception Handling) so that low-level
+    hardware faults become ordinary, catchable Python exceptions instead
+    of tearing down the interpreter. This is a CPython/ctypes design
+    choice for robustness, verified directly in this module's Run It
+    step — not a universal property of "running machine code."</dd>
+
+    <dt>If I run this as Administrator, will CLI succeed?</dt>
+    <dd>No. Administrator/root is a kernel-side authorization concept —
+    it changes what the kernel will <em>permit when you ask it to do
+    something via a syscall</em>. It has no effect on which CPU ring
+    your own code's instructions execute at. This exact confusion is
+    called out explicitly in <a href="../../../prerequisites/02_privilege_rings.html">Prerequisite 2</a>.</dd>
+
+    <dt>Could a kernel driver bug let user-mode code run CLI directly?</dt>
+    <dd>Not directly — but a vulnerable driver (which itself runs at
+    Ring 0) could be tricked into executing privileged operations
+    <em>on the attacker's behalf</em>. That's a real, well-known
+    privilege-escalation pattern, and it's exactly why "vulnerable
+    signed driver" exploitation is a known attack category — but note
+    it still routes through a Ring 0 component doing the privileged work,
+    never through Ring 3 code executing CLI directly.</dd>
+
+    <dt>Why RDTSC and not something else as the "boring" control case?</dt>
+    <dd>RDTSC (read timestamp counter) is a good contrast specifically
+    because it <em>sounds</em> like it should be privileged — it reads
+    low-level CPU state — but by default it's permitted at Ring 3 (the
+    CR4.TSD bit can restrict it, but that's not the default). It's a
+    useful reminder that "sounds low-level" and "is privileged" are not
+    the same test; only the ISA's actual privilege designation matters.</dd>
+  </dl>
+
+  <h2><span class="num">09</span>What's Next</h2>
+  <p>
+    You've now proven Ring 3 code can't touch privileged instructions
+    directly — so how does your program ever get the kernel to open a
+    file, read a socket, or spawn a process? Module 3 proves the answer:
+    there's exactly one sanctioned door, the system call, and you're
+    going to watch real ones cross it.
+  </p>
+
+  <div class="module-footer">
+    <a href="../01_mem_addressing/tutorial.html">← Module 01: mem_addressing</a>
+    <a href="../03_syscall_boundary/tutorial.html">Module 03: syscall_boundary →</a>
+  </div>
+</div>
