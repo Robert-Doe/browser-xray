@@ -30,3 +30,7 @@ nul
 
 # Logs
 *.log
+
+# webapp demo (Vite + TypeScript)
+webapp/node_modules/
+webapp/dist/
