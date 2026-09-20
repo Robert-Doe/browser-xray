@@ -60,8 +60,6 @@ function renderAll(): void {
   else renderRingsTab();
 }
 
-renderAll();
-
 // ---------------------------------------------------------------------------
 // Tab 1: virtual-to-physical address translation, two processes
 // ---------------------------------------------------------------------------
@@ -281,3 +279,10 @@ function renderRingsTab(): void {
   drawDiagram();
   drawInstructions();
 }
+
+// Boot last: renderAll() -> renderPagingTab()/renderRingsTab() synchronously
+// read consts (PRESET_ADDRS, PROC_A_SEED, ...) declared further down this
+// file. Calling it before those declarations run hits the temporal dead
+// zone and throws "can't access lexical declaration before initialization"
+// — a real bug this file shipped with, not a minifier artifact.
+renderAll();
