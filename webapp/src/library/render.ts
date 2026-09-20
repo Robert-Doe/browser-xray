@@ -216,10 +216,71 @@ function renderPrereqTabBody(p: LibPrereq): void {
     return;
   }
   body.innerHTML = `<iframe class="lib-tutorial-frame" sandbox="allow-same-origin" srcdoc="${escAttr(buildTutorialSrcdoc(p.tutorial))}"></iframe>`;
+  wireTutorialFrame(body.querySelector('iframe')!);
 }
 
 function escAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+}
+
+type LinkTarget = { kind: 'module'; num: number } | { kind: 'prereq'; id: string } | { kind: 'why' };
+
+/** The real tutorial.html files link to sibling modules/prerequisites/
+ * DECISIONS.md with paths like "../../phase5_networking/17_.../tutorial.html"
+ * that only resolve inside the real course repo, not this deployed SPA —
+ * following one for real 404s (the srcdoc iframe is same-origin with the
+ * parent page here, so a relative link resolves against this site's own
+ * URL, which has no such route). Match on the identifying filename/dir
+ * segment instead of the exact relative path, since every tutorial links
+ * at a different depth. */
+function resolveInternalLink(hrefNoFragment: string): LinkTarget | null {
+  if (/DECISIONS\.md$/.test(hrefNoFragment)) {
+    return selection.kind === 'module' ? { kind: 'why' } : null;
+  }
+  const tutorialMatch = hrefNoFragment.match(/([^/]+)\/tutorial\.html$/);
+  if (tutorialMatch) {
+    const mod = LIBRARY_MODULES.find((m) => m.dir.split('/').pop() === tutorialMatch[1]);
+    return mod ? { kind: 'module', num: mod.num } : null;
+  }
+  const prereqMatch = hrefNoFragment.match(/(\d+_[a-z0-9_]+)\.html$/);
+  if (prereqMatch) {
+    const p = LIBRARY_PREREQUISITES.find((pp) => pp.id === prereqMatch[1]);
+    return p ? { kind: 'prereq', id: p.id } : null;
+  }
+  return null; // ROADMAP.md, the prerequisites index page, etc. — no in-app target, left inert
+}
+
+/** Real external links (http/https) get target=_blank so they open a real
+ * new tab instead of hijacking the iframe. Relative links get intercepted
+ * and routed to the matching module/prereq/decisions tab in this app,
+ * instead of being followed for real and 404ing against this site. */
+function wireTutorialFrame(iframe: HTMLIFrameElement): void {
+  iframe.addEventListener('load', () => {
+    const doc = iframe.contentDocument;
+    if (!doc) return;
+    doc.querySelectorAll<HTMLAnchorElement>('a[href]').forEach((a) => {
+      const href = a.getAttribute('href') || '';
+      if (/^https?:\/\//.test(href)) {
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        return;
+      }
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        const resolved = resolveInternalLink(href.split('#')[0]);
+        if (!resolved) return;
+        if (resolved.kind === 'why') {
+          activeLibTab = 'why';
+        } else {
+          selection = resolved.kind === 'module' ? { kind: 'module', num: resolved.num } : { kind: 'prereq', id: resolved.id };
+          activeLibTab = 'tutorial';
+          activeFile = null;
+        }
+        renderNav();
+        renderDetail();
+      });
+    });
+  });
 }
 
 function renderTabBody(m: LibModule): void {
@@ -227,6 +288,7 @@ function renderTabBody(m: LibModule): void {
 
   if (activeLibTab === 'tutorial') {
     body.innerHTML = `<iframe class="lib-tutorial-frame" sandbox="allow-same-origin" srcdoc="${escAttr(buildTutorialSrcdoc(m.tutorial))}"></iframe>`;
+    wireTutorialFrame(body.querySelector('iframe')!);
     return;
   }
 
