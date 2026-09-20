@@ -1,6 +1,15 @@
 import './style.css';
 import { splitVirtualAddress, walk, physicalAddress, hex, PAGE_SIZE } from './paging';
 import { INSTRUCTIONS, execute, Ring } from './rings';
+import { parseResponse } from './pipeline/httpParser';
+import { tokenize } from './pipeline/htmlTokenizer';
+import { buildTree } from './pipeline/treeConstructor';
+import { renderDomTreeSvg } from './pipeline/domTreeSvg';
+import { renderModuleLibrary, wireModuleLibrary } from './library/render';
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
 const app = document.getElementById('app')!;
 
@@ -13,18 +22,32 @@ app.innerHTML = `
     </div>
   </div>
   <div class="hero">
-    <h1>Process &amp; Memory Model Explorer</h1>
+    <h1>Browser X-Ray &mdash; Tag to Byte, From Scratch</h1>
     <p class="tagline">
-      Real mechanics from the course, ported to TypeScript: a live
-      <code>x86-64</code> 4-level page-table walk proving virtual addresses
-      are a per-process illusion, and the Ring 0 / Ring 3 hardware boundary
-      that real x86 instructions cannot cross without a fault.
+      Real mechanics from a 35-module, 2-track course, ported to TypeScript:
+      the OS floor a browser stands on (virtual memory, privilege rings),
+      and the applied pipeline built on top of it &mdash; raw bytes off a
+      socket, parsed into an HTTP response, tokenized into HTML, and built
+      into a real DOM tree. Every module below the interactive tabs is the
+      real source and the real reasoning, not a summary.
     </p>
   </div>
   <main>
     <div class="tabs" id="tabs"></div>
     <div id="tab-content"></div>
   </main>
+  <section class="library-section">
+    <div class="library-head">
+      <h2>The Full Course Map</h2>
+      <p>
+        35 modules across two tracks, plus 8 prerequisites &mdash; every one shown here is the real
+        source and the real DECISIONS.md reasoning from the course repo, not a summary. The four tabs
+        above give six of them (the OS substrate and the tag-to-byte pipeline) a live, running demo;
+        everything below is real code you can read, browse by track and phase.
+      </p>
+    </div>
+    <div id="module-library"></div>
+  </section>
   <footer>
     Ported from <a href="https://github.com/Robert-Doe/browser-xray" target="_blank" rel="noopener">Robert-Doe/browser-xray</a>,
     track1-core-engine &mdash; real bit layouts, real opcodes, real fault semantics.
@@ -34,12 +57,14 @@ app.innerHTML = `
 const tabsEl = document.getElementById('tabs')!;
 const contentEl = document.getElementById('tab-content')!;
 
-type TabId = 'paging' | 'rings';
+type TabId = 'paging' | 'rings' | 'http' | 'dom';
 let activeTab: TabId = 'paging';
 
 const tabs: { id: TabId; label: string }[] = [
   { id: 'paging', label: 'Address Translation' },
   { id: 'rings', label: 'Privilege Rings' },
+  { id: 'http', label: 'Bytes → HTTP' },
+  { id: 'dom', label: 'HTML → DOM' },
 ];
 
 function renderTabs(): void {
@@ -57,7 +82,9 @@ function renderTabs(): void {
 function renderAll(): void {
   renderTabs();
   if (activeTab === 'paging') renderPagingTab();
-  else renderRingsTab();
+  else if (activeTab === 'rings') renderRingsTab();
+  else if (activeTab === 'http') renderHttpTab();
+  else renderDomTab();
 }
 
 // ---------------------------------------------------------------------------
@@ -280,9 +307,220 @@ function renderRingsTab(): void {
   drawInstructions();
 }
 
+// ---------------------------------------------------------------------------
+// Tab 3: raw bytes -> parsed HTTP response (Module 16: http_parsing)
+// ---------------------------------------------------------------------------
+
+const HTTP_CONTENT_LENGTH_EXAMPLE =
+  'HTTP/1.1 200 OK\r\n' +
+  'Content-Type: text/html\r\n' +
+  'Content-Length: 24\r\n' +
+  '\r\n' +
+  '<h1>Hello, X-Ray!</h1>\r\n';
+
+const HTTP_CHUNKED_EXAMPLE =
+  'HTTP/1.1 200 OK\r\n' +
+  'Content-Type: text/plain\r\n' +
+  'Transfer-Encoding: chunked\r\n' +
+  '\r\n' +
+  '7\r\n' +
+  'Mozilla\r\n' +
+  '9\r\n' +
+  'Developer\r\n' +
+  '0\r\n' +
+  '\r\n';
+
+function hexDump(bytes: Uint8Array): string {
+  const lines: string[] = [];
+  for (let offset = 0; offset < bytes.length; offset += 16) {
+    const chunk = bytes.slice(offset, offset + 16);
+    const hexPart = Array.from(chunk)
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join(' ')
+      .padEnd(47, ' ');
+    const asciiPart = Array.from(chunk)
+      .map((b) => (b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : '.'))
+      .join('');
+    lines.push(`${offset.toString(16).padStart(8, '0')}  ${hexPart}  ${asciiPart}`);
+  }
+  return lines.join('\n') || '(empty)';
+}
+
+function renderHttpTab(): void {
+  contentEl.innerHTML = `
+    <div class="card">
+      <h2>An HTTP response is just bytes with a plain-text structure</h2>
+      <p class="desc">
+        Real proof from Module 16 (<code>http_parsing</code>): no <code>fetch()</code>,
+        no framework &mdash; a status line, headers, a blank line, then a body framed
+        <em>either</em> by <code>Content-Length</code> or by chunked transfer encoding.
+        Without one of those two headers, a client has no way to know where the body
+        ends short of the connection closing. Edit the raw response below (or pick an
+        example) and watch it get parsed byte-for-byte.
+      </p>
+      <div class="btn-row">
+        <button class="btn secondary example-btn" data-ex="cl">Content-Length example</button>
+        <button class="btn secondary example-btn" data-ex="chunked">Chunked example</button>
+      </div>
+      <textarea id="http-input" class="raw-input" spellcheck="false" rows="8"></textarea>
+      <div class="btn-row"><button class="btn" id="http-parse-btn">Parse</button></div>
+    </div>
+    <div id="http-output"></div>
+  `;
+
+  const input = document.getElementById('http-input') as HTMLTextAreaElement;
+  const output = document.getElementById('http-output')!;
+
+  function setExample(kind: 'cl' | 'chunked') {
+    input.value = kind === 'cl' ? HTTP_CONTENT_LENGTH_EXAMPLE : HTTP_CHUNKED_EXAMPLE;
+    run();
+  }
+
+  function run() {
+    // A textarea normalizes \r\n to \n on some platforms; restore real
+    // CRLF framing before parsing, since that's what the wire format is.
+    const raw = input.value.replace(/\r?\n/g, '\r\n');
+    const bytes = new TextEncoder().encode(raw);
+
+    let html = `
+      <div class="card">
+        <h3 style="font-size:14px;margin:0 0 8px">Raw bytes (${bytes.length} total)</h3>
+        <pre class="hexdump">${escapeHtml(hexDump(bytes))}</pre>
+      </div>
+    `;
+
+    try {
+      const res = parseResponse(bytes);
+      const bodyText = new TextDecoder('utf-8', { fatal: false }).decode(res.body);
+      const headerRows = Object.entries(res.headers)
+        .map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v)}</td></tr>`)
+        .join('');
+      html += `
+        <div class="card">
+          <h3 style="font-size:14px;margin:0 0 8px">Parsed <code>HttpResponse</code></h3>
+          <table class="byte-table">
+            <tr><th>version</th><td>${escapeHtml(res.version)}</td></tr>
+            <tr><th>status</th><td>${res.statusCode} ${escapeHtml(res.reason)}</td></tr>
+            ${headerRows}
+          </table>
+          <h3 style="font-size:14px;margin:14px 0 8px">Body (${res.body.length} bytes, decoded)</h3>
+          <pre class="hexdump">${escapeHtml(bodyText)}</pre>
+        </div>
+      `;
+    } catch (e) {
+      html += `<div class="card"><p class="desc" style="color:var(--danger)">Parse error: ${escapeHtml(String(e instanceof Error ? e.message : e))}</p></div>`;
+    }
+
+    output.innerHTML = html;
+  }
+
+  document.getElementById('http-parse-btn')!.addEventListener('click', run);
+  contentEl.querySelectorAll<HTMLButtonElement>('.example-btn').forEach((btn) => {
+    btn.addEventListener('click', () => setExample(btn.dataset.ex as 'cl' | 'chunked'));
+  });
+
+  setExample('cl');
+}
+
+// ---------------------------------------------------------------------------
+// Tab 4: HTML text -> tokens -> a real DOM tree (Modules 19 & 20)
+// ---------------------------------------------------------------------------
+
+const DOM_EXAMPLES: { label: string; html: string }[] = [
+  { label: 'Basic tags', html: '<div class="card">\n  <p>Hello <b>world</b></p>\n</div>' },
+  { label: 'Auto-close <p><p>', html: '<p>First paragraph\n<p>Second paragraph (no closing tag on either)' },
+  { label: 'Auto-close <li><li>', html: '<ul>\n  <li>one\n  <li>two\n  <li>three\n</ul>' },
+  { label: 'Bogus comment <?xml?>', html: '<?xml version="1.0"?>\n<div>after the bogus comment</div>' },
+  { label: 'Unquoted + self-closing', html: '<img src=cat.png alt=cat>\n<br>\n<input type=text value=hi>' },
+  { label: 'Stray "<" literal', html: '<p>1 < 2 and that is not a tag</p>' },
+];
+
+function renderDomTab(): void {
+  contentEl.innerHTML = `
+    <div class="card">
+      <h2>Tokens are a flat stream; the tree is built incrementally</h2>
+      <p class="desc">
+        Real proof from Modules 19 (<code>html_tokenizer</code>) and 20 (<code>dom_tree_builder</code>):
+        an explicit character-at-a-time state machine (named states matching the real WHATWG spec)
+        turns HTML text into a flat token stream, then a separate "stack of open elements" turns
+        that stream into a tree &mdash; including the real, spec-accurate recovery behavior for
+        malformed input: a stray <code>&lt;</code> becomes a literal character, <code>&lt;?xml?&gt;</code>
+        becomes a bogus comment, and an unclosed <code>&lt;p&gt;</code> or <code>&lt;li&gt;</code>
+        auto-closes the previous one.
+      </p>
+      <div class="btn-row" id="dom-examples"></div>
+      <textarea id="dom-input" class="raw-input" spellcheck="false" rows="6"></textarea>
+      <div class="btn-row"><button class="btn" id="dom-run-btn">Tokenize &amp; Build Tree</button></div>
+    </div>
+    <div class="two-pane">
+      <div class="card">
+        <h3 style="font-size:14px;margin:0 0 8px">Token stream (Module 19)</h3>
+        <div id="dom-tokens" class="scroll-panel" style="max-height:360px"></div>
+      </div>
+      <div class="card">
+        <h3 style="font-size:14px;margin:0 0 8px">DOM tree (Module 20)</h3>
+        <div id="dom-tree" class="tree-view scroll-panel" style="max-height:360px"></div>
+      </div>
+    </div>
+  `;
+
+  const input = document.getElementById('dom-input') as HTMLTextAreaElement;
+  const tokensEl = document.getElementById('dom-tokens')!;
+  const treeEl = document.getElementById('dom-tree')!;
+  const examplesEl = document.getElementById('dom-examples')!;
+
+  for (const ex of DOM_EXAMPLES) {
+    const btn = document.createElement('button');
+    btn.className = 'btn secondary example-btn';
+    btn.textContent = ex.label;
+    btn.addEventListener('click', () => {
+      input.value = ex.html;
+      run();
+    });
+    examplesEl.appendChild(btn);
+  }
+
+  function tokenLabel(t: ReturnType<typeof tokenize>[number]): string {
+    switch (t.kind) {
+      case 'StartTag': {
+        const attrs = Object.entries(t.attributes)
+          .map(([k, v]) => ` ${k}="${v}"`)
+          .join('');
+        return `StartTag &lt;${escapeHtml(t.name)}${escapeHtml(attrs)}${t.selfClosing ? ' /' : ''}&gt;`;
+      }
+      case 'EndTag':
+        return `EndTag &lt;/${escapeHtml(t.name)}&gt;`;
+      case 'Comment':
+        return `Comment ${escapeHtml(JSON.stringify(t.data))}`;
+      case 'Character':
+        return `Character ${escapeHtml(JSON.stringify(t.data))}`;
+      case 'EndOfFile':
+        return 'EndOfFile';
+    }
+  }
+
+  function run() {
+    const html = input.value;
+    const tokens = tokenize(html);
+    tokensEl.innerHTML = `<table class="token-table"><tbody>${tokens
+      .map((t, i) => `<tr><td class="tok-num">${i}</td><td>${tokenLabel(t)}</td></tr>`)
+      .join('')}</tbody></table>`;
+
+    const tree = buildTree(tokens);
+    treeEl.innerHTML = renderDomTreeSvg(tree);
+  }
+
+  document.getElementById('dom-run-btn')!.addEventListener('click', run);
+  input.value = DOM_EXAMPLES[0].html;
+  run();
+}
+
 // Boot last: renderAll() -> renderPagingTab()/renderRingsTab() synchronously
 // read consts (PRESET_ADDRS, PROC_A_SEED, ...) declared further down this
 // file. Calling it before those declarations run hits the temporal dead
 // zone and throws "can't access lexical declaration before initialization"
 // — a real bug this file shipped with, not a minifier artifact.
 renderAll();
+
+renderModuleLibrary(document.getElementById('module-library')!);
+wireModuleLibrary();
