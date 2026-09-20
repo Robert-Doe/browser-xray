@@ -6,12 +6,40 @@
  */
 import { LIBRARY_MODULES, LIBRARY_PREREQUISITES, DESIGN_SYSTEM_CSS, type LibModule, type LibPrereq } from './library.generated';
 
+/** Overrides every custom property design-system.css defines (verified by
+ * grepping the real file for every var(--x) it references — 15 total, all
+ * covered here) with this app's own theme, instead of the course's own
+ * per-module accent + serif-heading system. Placed as the LAST <style> in
+ * <body>, after the fragment's own inline `body{--accent:...}` override,
+ * so it wins the cascade regardless of source order inside the fragment. */
+const THEME_OVERRIDE_CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;800&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap');
+  :root, body {
+    --bg: #0b0b0d;
+    --bg-raised: #18181b;
+    --bg-inset: #141416;
+    --fg: #eeece6;
+    --fg-dim: #9a9992;
+    --border: #2a2a2e;
+    --accent: #d4a017;
+    --accent-dim: #3a2f14;
+    --good: #4ade80;
+    --bad: #f87171;
+    --warn: #d9a441;
+    --code-fg: #eeece6;
+    --font-head: 'Space Grotesk', system-ui, sans-serif;
+    --font-body: 'Inter', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+`;
+
 /** Wraps a tutorial.html fragment (no <html>/<head>/<body> of its own,
  * just a per-page <style> accent override + content) with the course's
  * real shared stylesheet, so it renders exactly as authored inside a
- * sandboxed iframe — the actual tutorial, not a re-derived summary. */
+ * sandboxed iframe — the actual tutorial content, restyled to this app's
+ * own gold theme instead of the course's native per-module palette. */
 function buildTutorialSrcdoc(fragment: string): string {
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${DESIGN_SYSTEM_CSS}</style></head><body>${fragment}</body></html>`;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${DESIGN_SYSTEM_CSS}</style></head><body>${fragment}<style>${THEME_OVERRIDE_CSS}</style></body></html>`;
 }
 
 function esc(s: string): string {
