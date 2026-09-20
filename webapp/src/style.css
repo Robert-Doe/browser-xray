@@ -565,6 +565,15 @@ table.token-table tr:hover td { background: rgba(212, 160, 23, 0.05); }
 .tabs.lib-tabs { margin: 14px 0 14px; padding: 0; background: transparent; border-bottom: 1px solid var(--border); border-radius: 0; }
 .tabs.lib-tabs .tab-btn { border-radius: 6px 6px 0 0; }
 
+.lib-tutorial-frame {
+  width: 100%;
+  height: 70vh;
+  min-height: 420px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #14161a;
+}
+
 .lib-file-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 .lib-file-tab {
   font-family: var(--mono, monospace);

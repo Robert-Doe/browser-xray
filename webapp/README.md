@@ -39,13 +39,18 @@ indented text.
 
 **The Module Library** (below the four tabs) — every one of the course's
 35 modules (2 tracks, 10 phases) and 8 prerequisites, browsable by track
-and phase. Each module shows its real source files, its real
-`DECISIONS.md` reasoning, and verified doc links — generated directly from
-the course repo by `scripts/generate-library.mjs`, never hand-transcribed.
-Six modules (marked with a dot in the nav) also have the live demos above;
-the rest get the same real-code-and-reasoning treatment without a runnable
-demo, since many (process sandboxing, syscall filtering, ASLR/DEP/CFI,
-site isolation) require actual OS-level privileges a static webpage can't
+and phase. Each one opens on its actual **Tutorial** — the real
+`tutorial.html` narrative (analogies, step-by-step walkthroughs, captured
+real output, "Brain Exercise" and "No Dumb Questions" sections),
+re-rendered in a sandboxed iframe with the course's own real stylesheet
+and each module's own accent color, not a re-derived summary — followed
+by its real source files, its real `DECISIONS.md` reasoning, and verified
+doc links. All of it is generated directly from the course repo by
+`scripts/generate-library.mjs`, never hand-transcribed. Six modules
+(marked with a dot in the nav) also have the live demos above; the rest
+get the same tutorial-and-real-code treatment without a runnable demo,
+since many (process sandboxing, syscall filtering, ASLR/DEP/CFI, site
+isolation) require actual OS-level privileges a static webpage can't
 exercise honestly.
 
 ## Local development
