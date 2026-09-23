@@ -24,12 +24,12 @@ app.innerHTML = `
   <div class="hero">
     <h1>Browser X-Ray &mdash; Tag to Byte, From Scratch</h1>
     <p class="tagline">
-      Real mechanics from a 35-module, 2-track course, ported to TypeScript:
+      Mechanics from a 35-module, two-track course, ported to TypeScript:
       the OS floor a browser stands on (virtual memory, privilege rings),
-      and the applied pipeline built on top of it &mdash; raw bytes off a
-      socket, parsed into an HTTP response, tokenized into HTML, and built
-      into a real DOM tree. Every module below the interactive tabs is the
-      real source and the real reasoning, not a summary.
+      then the pipeline built on top of it, from raw bytes off a socket to
+      a parsed HTTP response to a tokenized, built DOM tree. Every module
+      below the interactive tabs is the actual source and reasoning, not a
+      summary.
     </p>
   </div>
   <main>
