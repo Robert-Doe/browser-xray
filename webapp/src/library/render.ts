@@ -5,6 +5,7 @@
  * scripts/generate-library.mjs, never hand-transcribed.
  */
 import { LIBRARY_MODULES, LIBRARY_PREREQUISITES, DESIGN_SYSTEM_CSS, type LibModule, type LibPrereq } from './library.generated';
+import { DEMO_BY_MODULE_ID } from './demos';
 
 /** Overrides every custom property design-system.css defines (verified by
  * grepping the real file for every var(--x) it references, 15 total, all
@@ -87,7 +88,7 @@ function mdLite(text: string): string {
 }
 
 type Selection = { kind: 'module'; num: number } | { kind: 'prereq'; id: string };
-type LibTab = 'tutorial' | 'code' | 'why' | 'docs';
+type LibTab = 'tutorial' | 'demo' | 'code' | 'why' | 'docs';
 
 let selection: Selection = { kind: 'module', num: 1 };
 let activeLibTab: LibTab = 'tutorial';
@@ -145,7 +146,7 @@ function renderNav(): void {
         const active = selection.kind === 'module' && selection.num === m.num;
         html += `<button class="lib-nav-item ${active ? 'active' : ''}" data-kind="module" data-num="${m.num}">
           <span class="lib-nav-num">${String(m.num).padStart(2, '0')}</span>${esc(m.title)}
-          ${m.hasLive ? '<span class="lib-live-dot" title="Has a live demo in the tabs above"></span>' : ''}
+          ${m.hasLive ? '<span class="lib-live-dot" title="Has a live, interactive demo"></span>' : ''}
         </button>`;
       }
     }
@@ -180,9 +181,11 @@ function renderDetail(): void {
       <div class="tabs lib-tabs">${tabs.map((t) => `<button class="tab-btn ${t.id === activeLibTab ? 'active' : ''}" data-libtab="${t.id}">${t.label}</button>`).join('')}</div>
       <div id="lib-tab-body"></div>
     `;
-    detail.querySelectorAll<HTMLButtonElement>('[data-libtab]').forEach((btn) => {
+    const prereqTabBtns = Array.from(detail.querySelectorAll<HTMLButtonElement>('[data-libtab]'));
+    prereqTabBtns.forEach((btn) => {
       btn.addEventListener('click', () => {
         activeLibTab = btn.dataset.libtab as LibTab;
+        prereqTabBtns.forEach((b) => b.classList.toggle('active', b === btn));
         renderPrereqTabBody(p);
       });
     });
@@ -191,15 +194,17 @@ function renderDetail(): void {
   }
 
   const m = findModule(selection.num)!;
+  const demoFn = DEMO_BY_MODULE_ID[m.id];
   const tabs: { id: LibTab; label: string }[] = [
     { id: 'tutorial', label: 'Tutorial' },
+    ...(demoFn ? [{ id: 'demo' as LibTab, label: 'Live Demo' }] : []),
     { id: 'code', label: `Real Code (${m.files.length})` },
     { id: 'why', label: `Why These Decisions (${m.decisions.length})` },
     { id: 'docs', label: 'Docs' },
   ];
 
   detail.innerHTML = `
-    <div class="lib-eyebrow">Module ${String(m.num).padStart(2, '0')} · ${esc(m.phase)}${m.hasLive ? ' · <span class="lib-has-live">has a live demo above</span>' : ''}</div>
+    <div class="lib-eyebrow">Module ${String(m.num).padStart(2, '0')} · ${esc(m.phase)}${demoFn ? ' · <span class="lib-has-live">has a live demo</span>' : ''}</div>
     <h2>${esc(m.title)}</h2>
     <p class="desc">${esc(m.proves)}</p>
     ${m.depends.length ? `<div class="lib-depends">Depends on: ${m.depends.map((n) => `<a class="lib-dep-link" data-num="${n}">Module ${String(n).padStart(2, '0')}</a>`).join(', ')}</div>` : ''}
@@ -217,9 +222,11 @@ function renderDetail(): void {
     });
   });
 
-  detail.querySelectorAll<HTMLButtonElement>('[data-libtab]').forEach((btn) => {
+  const moduleTabBtns = Array.from(detail.querySelectorAll<HTMLButtonElement>('[data-libtab]'));
+  moduleTabBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
       activeLibTab = btn.dataset.libtab as LibTab;
+      moduleTabBtns.forEach((b) => b.classList.toggle('active', b === btn));
       renderTabBody(m);
     });
   });
@@ -317,6 +324,14 @@ function renderTabBody(m: LibModule): void {
   if (activeLibTab === 'tutorial') {
     body.innerHTML = `<iframe class="lib-tutorial-frame" sandbox="allow-same-origin" srcdoc="${escAttr(buildTutorialSrcdoc(m.tutorial))}"></iframe>`;
     wireTutorialFrame(body.querySelector('iframe')!);
+    return;
+  }
+
+  if (activeLibTab === 'demo') {
+    const demoFn = DEMO_BY_MODULE_ID[m.id];
+    if (!demoFn) { body.innerHTML = '<div class="desc">No live demo for this module.</div>'; return; }
+    body.innerHTML = '<div class="lib-demo-mount"></div>';
+    demoFn(body.querySelector('.lib-demo-mount')!);
     return;
   }
 
