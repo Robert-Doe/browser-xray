@@ -1,6 +1,6 @@
 /**
  * Ported from track2-applied-layer/phase6_parsing_dom/19_html_tokenizer/tokens.py
- * — the five kinds of token a tokenizer emits. It never builds a tree
+ *, the five kinds of token a tokenizer emits. It never builds a tree
  * (that's the tree constructor's job, Module 20); its entire output is a
  * flat stream of these.
  */

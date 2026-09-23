@@ -1,8 +1,8 @@
 /**
  * Ported from track2-applied-layer/phase5_networking/16_http_parsing/http_parser.py
- * (Module 16: http_parsing) — a real, hand-rolled HTTP/1.1 response parser.
+ * (Module 16: http_parsing), a real, hand-rolled HTTP/1.1 response parser.
  * No fetch(), no framework: an HTTP response is just bytes with a
- * well-defined plain-text structure —
+ * well-defined plain-text structure:
  *
  *   STATUS LINE \r\n
  *   Header-Name: value \r\n
@@ -96,7 +96,7 @@ export function dechunk(chunkedBody: Uint8Array): Uint8Array {
 
 export function parseResponse(raw: Uint8Array): HttpResponse {
   const headerEnd = indexOfBytes(raw, CRLFCRLF);
-  if (headerEnd === -1) throw new Error('no blank line found — response has no complete header block');
+  if (headerEnd === -1) throw new Error('no blank line found, response has no complete header block');
   const headerBlock = raw.slice(0, headerEnd);
   const remainder = raw.slice(headerEnd + 4);
 

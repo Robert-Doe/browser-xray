@@ -1,11 +1,11 @@
 /**
- * rings.ts — ported straight from
+ * rings.ts, ported straight from
  * track1-core-engine/phase1_bare_metal/02_privilege_rings's real experiment
  * (ring_boundary_probe.py / privileged_instr_child.py): four real x86-64
  * instructions, hand-assembled to their actual opcode bytes, run from a
  * genuinely executable page. Two are unprivileged (legal at CPL 3). Two are
  * defined by the x86 architecture itself as privileged (legal only at
- * CPL 0) — the CPU's own decode logic checks the Current Privilege Level
+ * CPL 0), the CPU's own decode logic checks the Current Privilege Level
  * and raises #GP (General Protection fault) before the instruction takes
  * any effect, with no OS policy involved.
  */
@@ -37,7 +37,7 @@ export const INSTRUCTIONS: Instruction[] = [
     name: 'CLI',
     opcode: '0xFA',
     bytes: [0xfa],
-    description: 'Clear Interrupt Flag — disables maskable hardware interrupts machine-wide.',
+    description: 'Clear Interrupt Flag, disables maskable hardware interrupts machine-wide.',
     privileged: true,
   },
   {

@@ -1,8 +1,8 @@
 /**
  * Ported from track2-applied-layer/phase6_parsing_dom/20_dom_tree_builder/dom_nodes.py
- * — a DOM tree is built from exactly these shapes: one root Document,
+ *, a DOM tree is built from exactly these shapes: one root Document,
  * Element nodes (children + attributes), Text nodes, and Comment nodes.
- * Nothing here is tokenizer-shaped anymore — this is genuinely a tree,
+ * Nothing here is tokenizer-shaped anymore, this is genuinely a tree,
  * with parent/child relationships, not a flat stream.
  */
 export interface TextNode {
@@ -26,7 +26,7 @@ export interface DocumentNode {
 
 export type DomNode = TextNode | CommentNode | ElementNode | DocumentNode;
 
-/** A small pretty-printer — not part of a real DOM API, but useful for
+/** A small pretty-printer, not part of a real DOM API, but useful for
  * actually seeing the tree shape this module builds. */
 export function renderTreeText(node: DomNode, indent = 0): string {
   const pad = '  '.repeat(indent);

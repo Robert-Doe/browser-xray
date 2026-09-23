@@ -1,19 +1,19 @@
 /**
  * Ported from track2-applied-layer/phase6_parsing_dom/19_html_tokenizer/html_tokenizer.py
- * (Module 19: html_tokenizer) — a real state-machine HTML tokenizer.
+ * (Module 19: html_tokenizer), a real state-machine HTML tokenizer.
  *
  * This is a genuine (if scoped-down) implementation of the shape of the
  * WHATWG HTML5 tokenization algorithm: an explicit state machine, one
  * character consumed at a time, with named states matching the real
  * spec's own state names. It is NOT a regex hack, and it is NOT "find
- * things between < and >" — both of those approaches fail on exactly the
+ * things between < and >", both of those approaches fail on exactly the
  * malformed-input cases this module deliberately tests, which real
  * browsers are specified to recover from in precise, defined ways.
  *
  * Scope: covers start/end tags, attributes (quoted and unquoted),
  * comments, and the two "bogus comment" recovery paths real HTML5 parsing
  * defines for `<?...>` and invalid tag-open sequences. DOCTYPE is
- * recognized and skipped (not emitted as its own token type) — a scope
+ * recognized and skipped (not emitted as its own token type), a scope
  * simplification noted in the course's own DECISIONS.md.
  */
 import type { HtmlToken, StartTag, EndTag } from './htmlTokens';
@@ -45,7 +45,7 @@ export class HtmlTokenizer {
   private pos = 0;
   private state: State = 'DATA';
   tokens: HtmlToken[] = [];
-  /** Not in the original Python — a side channel recording every state the
+  /** Not in the original Python, a side channel recording every state the
    * machine visited, purely so the webapp can show the trace. It changes
    * no tokenizer behavior. */
   stateTrace: State[] = [];
@@ -75,7 +75,7 @@ export class HtmlTokenizer {
   }
 
   /** The ONE place any non-Character token enters the stream. Flushing the
-   * pending character buffer here — rather than at scattered call sites —
+   * pending character buffer here, rather than at scattered call sites,
    * is what guarantees correct ordering regardless of which state path
    * produced the token: a Comment or tag is never allowed to appear
    * before text that preceded it in the source. */
@@ -173,13 +173,13 @@ export class HtmlTokenizer {
       this.state = 'MARKUP_DECLARATION_OPEN';
     } else if (c === '?') {
       // Real spec behavior: invalid first character after '<' that isn't a
-      // letter, '/', or '!' — treated as a BOGUS COMMENT, not a syntax
+      // letter, '/', or '!', treated as a BOGUS COMMENT, not a syntax
       // error that aborts parsing.
       this.commentData = '';
       this.state = 'BOGUS_COMMENT';
     } else {
       // Real spec behavior: '<' not followed by anything tag-like is not
-      // an error at all — it's just a literal '<' character in the data.
+      // an error at all, it's just a literal '<' character in the data.
       // ("1 < 2" is valid HTML text.)
       this.charBuffer += '<';
       this.state = 'DATA'; // reconsume c in DATA
@@ -385,7 +385,7 @@ export class HtmlTokenizer {
   private stateDoctypeSkip(): void {
     // Scope simplification: we don't build a DOCTYPE token type, we just
     // consume up to '>' and discard it. Real browsers use a DOCTYPE token
-    // to decide quirks-mode rendering — out of scope for this tokenizer.
+    // to decide quirks-mode rendering, out of scope for this tokenizer.
     const c = this.current();
     if (c === null) {
       this.state = 'EOF';

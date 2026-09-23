@@ -1,14 +1,14 @@
 /**
- * paging.ts — a real x86-64 4-level page-table address translation, ported
+ * paging.ts, a real x86-64 4-level page-table address translation, ported
  * from what track1-core-engine/phase1_bare_metal/01_mem_addressing proves:
  *
- *   "A virtual address is a per-process, per-run illusion — never a fixed
+ *   "A virtual address is a per-process, per-run illusion, never a fixed
  *   physical location. Process A's page tables might map 0x1F6330144B0 to
  *   physical frame X; Process B's completely separate page tables might
  *   map that same virtual number to physical frame Y, or to nothing at
  *   all." (module tutorial.html)
  *
- * Real x86-64 splits a 48-bit canonical virtual address into five fields —
+ * Real x86-64 splits a 48-bit canonical virtual address into five fields,
  * this is the actual hardware layout the MMU walks on every memory access:
  *
  *   bits 47-39  PML4 index   (9 bits, 512 entries)
@@ -33,7 +33,7 @@ export interface VaFields {
   offset: number;
 }
 
-/** Mirrors how the MMU decodes a virtual address's bit fields — hardware-fixed, same for every process. */
+/** Mirrors how the MMU decodes a virtual address's bit fields, hardware-fixed, same for every process. */
 export function splitVirtualAddress(vaddr: bigint): VaFields {
   const mask9 = 0x1ffn;
   const mask12 = 0xfffn;
@@ -46,7 +46,7 @@ export function splitVirtualAddress(vaddr: bigint): VaFields {
   };
 }
 
-/** Simple deterministic 32-bit mix (mulberry32-style) so a given (seed, path) always resolves the same way within one process, but differs across processes/seeds — standing in for "whatever CR3 happens to point to." */
+/** Simple deterministic 32-bit mix (mulberry32-style) so a given (seed, path) always resolves the same way within one process, but differs across processes/seeds, standing in for "whatever CR3 happens to point to." */
 function mix(a: number, b: number, c: number, d: number, e: number): number {
   let h = (a * 2654435761) ^ (b * 2246822519) ^ (c * 3266489917) ^ (d * 668265263) ^ (e * 374761393);
   h = Math.imul(h ^ (h >>> 15), 2246822519);
@@ -61,9 +61,9 @@ export interface PageTableEntry {
 }
 
 /**
- * walk() — simulates one process's private 4-level page-table walk.
+ * walk(), simulates one process's private 4-level page-table walk.
  * `seed` stands in for that process's CR3 (the physical root of ITS OWN
- * tables) — two processes with different seeds have entirely separate
+ * tables), two processes with different seeds have entirely separate
  * tables, even when asked to translate the identical virtual address.
  */
 export function walk(seed: number, fields: VaFields): PageTableEntry {
